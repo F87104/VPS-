@@ -23,6 +23,11 @@
 | X終了ログのSlack通知 | 完了 |
 | XのVPSログイン状態 | 完了 |
 | Xのcron自動起動 | 7:00 / 12:30 / 19:00に設定済み |
+| noteスキ・フォロー補助ツール作成 | 完了 |
+| note補助ツールのVPS配置 | 完了 |
+| note終了ログのSlack通知 | 完了 |
+| noteのVPSログイン状態 | 未完了 |
+| noteのcron自動起動 | ログイン状態確認後 |
 | GitHub push | リモートURL待ち |
 
 ## 現在のVPS構成
@@ -104,6 +109,8 @@ cron設定:
 - [outputs/notify_slack_summary.py](outputs/notify_slack_summary.py): 終了ログをSlackへ通知するスクリプト
 - [outputs/auto_like_v11_2_1_limited.py](outputs/auto_like_v11_2_1_limited.py): 件数上限つきにしたXいいね・フォロー補助ツール
 - [outputs/run_x_daily_vps.sh](outputs/run_x_daily_vps.sh): VPSでX補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
+- [outputs/note_suki_follow_safe.py](outputs/note_suki_follow_safe.py): noteのスキ・フォロー補助ツール
+- [outputs/run_note_daily_vps.sh](outputs/run_note_daily_vps.sh): VPSでnote補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
 
 ## 動作確認コマンド
 
@@ -281,9 +288,50 @@ Xは朝7:00、昼12:30、夕19:00の3回稼働です。Substackの12:00実行と
 X_MAX_ACTIONS=0 X_MAX_LIKES=0 X_MAX_FOLLOWS=0 X_MAX_UNFOLLOWS=0 /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh
 ```
 
+## note補助ツール
+
+noteの `スキ` と `フォロー` を対象にした補助ツールを作成しました。
+
+追加した上限:
+
+- `--max-actions`: 1回の合計アクション数
+- `--max-likes`: 1回のスキ数
+- `--max-follows`: 1回のフォロー数
+- `--keywords`: 対象キーワードCSV。空文字ならキーワードで絞らない
+- `--exclude-keywords`: 除外キーワードCSV
+
+VPS上の配置:
+
+```text
+/home/ubuntu/f_tools/note_suki_follow_safe.py
+/home/ubuntu/f_tools/run_note_daily_vps.sh
+```
+
+VPSで確認済み:
+
+- スクリプトの構文チェック: OK
+- Playwright / Chromium起動: OK
+- note公開ページの巡回: OK
+- スキ / フォロー候補検出: OK
+- Slack終了通知: OK
+
+未完了:
+
+- noteのログイン状態をVPSへ移すこと
+- noteのアカウント確認
+- 実クリック確認
+- cron登録
+
+0件テスト:
+
+```bash
+NOTE_MAX_ACTIONS=0 NOTE_MAX_LIKES=0 NOTE_MAX_FOLLOWS=0 /bin/bash /home/ubuntu/f_tools/run_note_daily_vps.sh
+```
+
 ## 注意
 
 - `.env`、SSH鍵、ログ、実行履歴はGitHubへ保存しない設定です。
 - VPS上の`.env`にはSlack Webhook URLとOpenAI APIキーが入っています。
 - このリポジトリには秘密情報を入れない方針です。
 - XのログインCookieやstorage_stateは秘密情報扱いです。GitHubには保存しません。
+- noteのログインCookieやstorage_stateも秘密情報扱いです。GitHubには保存しません。
