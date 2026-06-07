@@ -1,0 +1,19 @@
+# Secrets and local machine state
+.env
+*.pem
+*.key
+work/
+
+# Logs and runtime state
+logs/
+*.log
+substack_like_follow_state.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local browser profiles
+.substack_safe_profile/
+.substack_new_profile/
