@@ -16,6 +16,8 @@
 | エラーログ出力 | 完了 |
 | 再起動後のcron継続 | 完了 |
 | Substackいいね・フォロー補助ツール安全化 | 完了 |
+| Substack補助ツールのVPS毎日12:00自動起動 | 完了 |
+| Substack終了ログのSlack通知 | 完了 |
 | GitHub push | リモートURL待ち |
 
 ## 現在のVPS構成
@@ -93,6 +95,8 @@ cron設定:
 - [outputs/requirements.txt](outputs/requirements.txt): 必要Pythonライブラリ
 - [outputs/SETUP_GUIDE.md](outputs/SETUP_GUIDE.md): 初心者向けVPSセットアップ手順
 - [outputs/substack_like_follow_safe.py](outputs/substack_like_follow_safe.py): 安全寄りに直したSubstackいいね・フォロー補助ツール
+- [outputs/run_substack_daily_vps.sh](outputs/run_substack_daily_vps.sh): VPSで毎日12:00に実行するためのラッパースクリプト
+- [outputs/notify_slack_summary.py](outputs/notify_slack_summary.py): 終了ログをSlackへ通知するスクリプト
 
 ## 動作確認コマンド
 
@@ -141,6 +145,8 @@ timedatectl
 - `--execute --yes` の時だけ確認なし
 - 重複防止用の履歴を保存
 - エラーをログへ出力
+- 実行時は投稿順、スクロール量、待機時間をランダム化
+- 1回の自動実行は合計6アクションまで
 
 候補確認だけ:
 
@@ -152,6 +158,52 @@ python3 outputs/substack_like_follow_safe.py
 
 ```bash
 python3 outputs/substack_like_follow_safe.py --execute
+```
+
+### VPSで毎日12:00の自動起動
+
+VPSのcronで、毎日12:00 JSTに以下を実行します。Macの電源が入っていなくても動く構成です。
+
+```text
+/home/ubuntu/f_tools/run_substack_daily_vps.sh
+```
+
+自動実行時の内容:
+
+```bash
+/usr/bin/python3 /home/ubuntu/f_tools/substack_like_follow_safe.py \
+  --execute \
+  --yes \
+  --max-actions 6 \
+  --max-likes 6 \
+  --max-follows 2 \
+  --min-wait 30 \
+  --max-wait 120 \
+  --view-min-wait 8 \
+  --view-max-wait 24 \
+  --scrolls 8
+```
+
+cron:
+
+```cron
+0 12 * * * /bin/bash /home/ubuntu/f_tools/run_substack_daily_vps.sh >> /home/ubuntu/f_tools/logs/substack_daily_cron.log 2>&1
+```
+
+ログ:
+
+```text
+/home/ubuntu/f_tools/logs/substack_daily.log
+/home/ubuntu/f_tools/logs/substack_daily_last.log
+/home/ubuntu/f_tools/logs/substack_daily_cron.log
+```
+
+終了時にはSlackへ以下を通知します。
+
+```text
+Substackいいね・フォロー自動実行 終了
+exit_status
+ログ末尾
 ```
 
 ## 注意
