@@ -18,6 +18,11 @@
 | Substackいいね・フォロー補助ツール安全化 | 完了 |
 | Substack補助ツールのVPS毎日12:00自動起動 | 完了 |
 | Substack終了ログのSlack通知 | 完了 |
+| Xいいね・フォロー補助ツールの件数上限追加 | 完了 |
+| X補助ツールのVPS配置 / Playwright導入 | 完了 |
+| X終了ログのSlack通知 | 完了 |
+| XのVPSログイン状態 | 未完了 |
+| Xのcron自動起動 | ログイン状態確認後 |
 | GitHub push | リモートURL待ち |
 
 ## 現在のVPS構成
@@ -97,6 +102,8 @@ cron設定:
 - [outputs/substack_like_follow_safe.py](outputs/substack_like_follow_safe.py): 安全寄りに直したSubstackいいね・フォロー補助ツール
 - [outputs/run_substack_daily_vps.sh](outputs/run_substack_daily_vps.sh): VPSで毎日12:00に実行するためのラッパースクリプト
 - [outputs/notify_slack_summary.py](outputs/notify_slack_summary.py): 終了ログをSlackへ通知するスクリプト
+- [outputs/auto_like_v11_2_1_limited.py](outputs/auto_like_v11_2_1_limited.py): 件数上限つきにしたXいいね・フォロー補助ツール
+- [outputs/run_x_daily_vps.sh](outputs/run_x_daily_vps.sh): VPSでX補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
 
 ## 動作確認コマンド
 
@@ -206,8 +213,67 @@ exit_status
 ログ末尾
 ```
 
+## X補助ツール
+
+添付されていたX用ツール `auto_like_v11.2.1_hotfix.py` は、1回の起動で必ず止まる上限を追加した版を作成しました。
+
+追加した上限:
+
+- `--max-actions`: 1回の合計アクション数
+- `--max-likes`: 1回のいいね数
+- `--max-follows`: 1回のフォロー数
+- `--max-unfollows`: 1回のアンフォロー数
+- `--max-runtime-minutes`: 1回の実行時間
+- headlessでログアウト画面が出た場合は、成功扱いせず終了
+- 終了時に合計、いいね、フォロー、アンフォロー数をログへ出力
+
+VPS上の配置:
+
+```text
+/home/ubuntu/f_tools/auto_like_v11_2_1_limited.py
+/home/ubuntu/f_tools/run_x_daily_vps.sh
+/home/ubuntu/prometheus/config.ini
+```
+
+VPSにはPlaywrightとChromiumを導入済みです。
+
+現在のX自動実行コマンド:
+
+```bash
+/usr/bin/python3 /home/ubuntu/f_tools/auto_like_v11_2_1_limited.py \
+  --timeline \
+  --headless \
+  --config /home/ubuntu/prometheus/config.ini \
+  --max-actions 12 \
+  --max-likes 10 \
+  --max-follows 2 \
+  --max-unfollows 0 \
+  --max-runtime-minutes 45
+```
+
+VPSで確認済み:
+
+- スクリプトの構文チェック: OK
+- Playwright / Chromium起動: OK
+- X未ログイン時の停止: OK
+- Slack終了通知: OK
+
+未完了:
+
+- VPSでXのログイン状態を使えるようにすること
+- ログイン状態確認後にcronへ登録すること
+
+cron登録予定:
+
+```cron
+30 12 * * * /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh >> /home/ubuntu/f_tools/logs/x_daily_cron.log 2>&1
+```
+
+Substackと同時刻にぶつけないため、Xは12:30 JST予定です。
+
 ## 注意
 
 - `.env`、SSH鍵、ログ、実行履歴はGitHubへ保存しない設定です。
 - VPS上の`.env`にはSlack Webhook URLとOpenAI APIキーが入っています。
 - このリポジトリには秘密情報を入れない方針です。
+- XのログインCookieやstorage_stateは秘密情報扱いです。GitHubには保存しません。
