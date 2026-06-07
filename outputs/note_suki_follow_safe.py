@@ -367,11 +367,13 @@ def should_execute(args: argparse.Namespace, candidate: Candidate) -> bool:
 def click_candidate(page: Page, button: Locator, candidate: Candidate, args: argparse.Namespace) -> bool:
     if not should_execute(args, candidate):
         logging.info(
-            "[DRY-RUN] %s | %s | %s | %s",
+            "[DRY-RUN] %s | %s | %s | %s | label=%s | preview=%s",
             candidate.action.upper(),
             candidate.title,
             candidate.author,
             candidate.url,
+            candidate.button_label,
+            candidate.text_preview[:80],
         )
         return False
 
@@ -384,11 +386,13 @@ def click_candidate(page: Page, button: Locator, candidate: Candidate, args: arg
             logging.error("note login prompt appeared after click. Stop executing.")
             return False
         logging.info(
-            "[EXECUTED] %s | %s | %s | %s",
+            "[EXECUTED] %s | %s | %s | %s | label=%s | preview=%s",
             candidate.action.upper(),
             candidate.title,
             candidate.author,
             candidate.url,
+            candidate.button_label,
+            candidate.text_preview[:80],
         )
         return True
     except Exception as exc:

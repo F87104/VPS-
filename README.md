@@ -26,8 +26,10 @@
 | noteスキ・フォロー補助ツール作成 | 完了 |
 | note補助ツールのVPS配置 | 完了 |
 | note終了ログのSlack通知 | 完了 |
-| noteのVPSログイン状態 | 未完了 |
-| noteのcron自動起動 | ログイン状態確認後 |
+| noteのVPSログイン状態 | 完了 |
+| noteのスキ実行確認 | 完了 |
+| noteのフォロー実行確認 | 完了 |
+| noteのcron自動起動 | 時刻指定待ち |
 | GitHub push | リモートURL待ち |
 
 ## 現在のVPS構成
@@ -313,14 +315,21 @@ VPSで確認済み:
 - Playwright / Chromium起動: OK
 - note公開ページの巡回: OK
 - スキ / フォロー候補検出: OK
+- noteログイン状態のVPS移行: OK
+- スキ1件の実行: OK
+- フォロー1件の実行: OK
 - Slack終了通知: OK
 
 未完了:
 
-- noteのログイン状態をVPSへ移すこと
-- noteのアカウント確認
-- 実クリック確認
 - cron登録
+
+ログイン状態:
+
+- Mac側のnoteログイン状態からVPS用の `note_storage_state.json` を作成
+- VPSの `/home/ubuntu/prometheus/note_storage_state.json` に配置
+- 0件テストで候補検出を確認
+- `note_storage_state.json` は秘密情報扱いなのでGitHubには保存しない
 
 0件テスト:
 

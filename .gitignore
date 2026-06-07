@@ -17,3 +17,4 @@ __pycache__/
 # Local browser profiles
 .substack_safe_profile/
 .substack_new_profile/
+.note_safe_profile/
