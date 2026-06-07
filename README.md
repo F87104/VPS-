@@ -29,7 +29,7 @@
 | noteのVPSログイン状態 | 完了 |
 | noteのスキ実行確認 | 完了 |
 | noteのフォロー実行確認 | 完了 |
-| noteのcron自動起動 | 時刻指定待ち |
+| noteのcron自動起動 | 8:00 / 13:00 / 20:00に設定済み |
 | GitHub push | リモートURL待ち |
 
 ## 現在のVPS構成
@@ -320,16 +320,22 @@ VPSで確認済み:
 - フォロー1件の実行: OK
 - Slack終了通知: OK
 
-未完了:
-
-- cron登録
-
 ログイン状態:
 
 - Mac側のnoteログイン状態からVPS用の `note_storage_state.json` を作成
 - VPSの `/home/ubuntu/prometheus/note_storage_state.json` に配置
 - 0件テストで候補検出を確認
 - `note_storage_state.json` は秘密情報扱いなのでGitHubには保存しない
+
+cron:
+
+```cron
+0 8 * * * /bin/bash /home/ubuntu/f_tools/run_note_daily_vps.sh >> /home/ubuntu/f_tools/logs/note_daily_cron.log 2>&1
+0 13 * * * /bin/bash /home/ubuntu/f_tools/run_note_daily_vps.sh >> /home/ubuntu/f_tools/logs/note_daily_cron.log 2>&1
+0 20 * * * /bin/bash /home/ubuntu/f_tools/run_note_daily_vps.sh >> /home/ubuntu/f_tools/logs/note_daily_cron.log 2>&1
+```
+
+noteは朝8:00、昼13:00、夜20:00の3回稼働です。Xの稼働時刻とは少しずらしています。
 
 0件テスト:
 
