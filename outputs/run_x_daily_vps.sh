@@ -7,6 +7,11 @@ SCRIPT="$BASE_DIR/auto_like_v11_2_1_limited.py"
 NOTIFIER="$BASE_DIR/notify_slack_summary.py"
 CONFIG_PATH="${X_CONFIG:-/home/ubuntu/prometheus/config.ini}"
 STORAGE_STATE="${X_STORAGE_STATE:-/home/ubuntu/prometheus/x_storage_state.json}"
+MAX_ACTIONS="${X_MAX_ACTIONS:-12}"
+MAX_LIKES="${X_MAX_LIKES:-10}"
+MAX_FOLLOWS="${X_MAX_FOLLOWS:-2}"
+MAX_UNFOLLOWS="${X_MAX_UNFOLLOWS:-0}"
+MAX_RUNTIME_MINUTES="${X_MAX_RUNTIME_MINUTES:-45}"
 MASTER_LOG="$LOG_DIR/x_daily.log"
 LAST_LOG="$LOG_DIR/x_daily_last.log"
 
@@ -21,7 +26,7 @@ cd "$BASE_DIR" || exit 1
 {
   echo "==== $(date '+%Y-%m-%d %H:%M:%S') X daily start ===="
   echo "host=$(hostname)"
-  echo "mode=timeline headless=yes max_actions=12 max_likes=10 max_follows=2 max_unfollows=0 max_runtime_minutes=45"
+  echo "mode=timeline headless=yes max_actions=$MAX_ACTIONS max_likes=$MAX_LIKES max_follows=$MAX_FOLLOWS max_unfollows=$MAX_UNFOLLOWS max_runtime_minutes=$MAX_RUNTIME_MINUTES"
   echo "config=$CONFIG_PATH"
   if [ -f "$STORAGE_STATE" ]; then
     echo "storage_state=$STORAGE_STATE"
@@ -34,11 +39,11 @@ cd "$BASE_DIR" || exit 1
   --timeline \
   --headless \
   --config "$CONFIG_PATH" \
-  --max-actions 12 \
-  --max-likes 10 \
-  --max-follows 2 \
-  --max-unfollows 0 \
-  --max-runtime-minutes 45 \
+  --max-actions "$MAX_ACTIONS" \
+  --max-likes "$MAX_LIKES" \
+  --max-follows "$MAX_FOLLOWS" \
+  --max-unfollows "$MAX_UNFOLLOWS" \
+  --max-runtime-minutes "$MAX_RUNTIME_MINUTES" \
   "${EXTRA_ARGS[@]}" \
   >> "$LAST_LOG" 2>&1
 

@@ -21,8 +21,8 @@
 | Xいいね・フォロー補助ツールの件数上限追加 | 完了 |
 | X補助ツールのVPS配置 / Playwright導入 | 完了 |
 | X終了ログのSlack通知 | 完了 |
-| XのVPSログイン状態 | 未完了 |
-| Xのcron自動起動 | ログイン状態確認後 |
+| XのVPSログイン状態 | 完了 |
+| Xのcron自動起動 | 7:00 / 12:30 / 19:00に設定済み |
 | GitHub push | リモートURL待ち |
 
 ## 現在のVPS構成
@@ -258,18 +258,28 @@ VPSで確認済み:
 - X未ログイン時の停止: OK
 - Slack終了通知: OK
 
-未完了:
+ログイン状態:
 
-- VPSでXのログイン状態を使えるようにすること
-- ログイン状態確認後にcronへ登録すること
+- Mac側のXログイン状態からVPS用の `x_storage_state.json` を作成
+- VPSの `/home/ubuntu/prometheus/x_storage_state.json` に配置
+- 0件テストで `ログイン済み` とツイート検出を確認
+- `x_storage_state.json` は秘密情報扱いなのでGitHubには保存しない
 
-cron登録予定:
+cron:
 
 ```cron
+0 7 * * * /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh >> /home/ubuntu/f_tools/logs/x_daily_cron.log 2>&1
 30 12 * * * /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh >> /home/ubuntu/f_tools/logs/x_daily_cron.log 2>&1
+0 19 * * * /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh >> /home/ubuntu/f_tools/logs/x_daily_cron.log 2>&1
 ```
 
-Substackと同時刻にぶつけないため、Xは12:30 JST予定です。
+Xは朝7:00、昼12:30、夕19:00の3回稼働です。Substackの12:00実行とは30分ずらしています。
+
+0件テスト:
+
+```bash
+X_MAX_ACTIONS=0 X_MAX_LIKES=0 X_MAX_FOLLOWS=0 X_MAX_UNFOLLOWS=0 /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh
+```
 
 ## 注意
 
