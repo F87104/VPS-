@@ -14,7 +14,8 @@ import os
 import re
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
@@ -56,7 +57,7 @@ NEWS_QUERIES = (
     "site:bloomberg.co.jp",
     "site:jp.reuters.com/business",
     "site:jp.wsj.com",
-    "ドル円 OR 為替 OR USDJPY OR GOLD OR NASDAQ OR S&P500 OR NYダウ OR FRB OR CPI",
+    "ドル円 OR 為替 OR USDJPY OR GOLD OR NASDAQ OR S&P500 OR NYダウ OR FRB OR CPI -site:finance.yahoo.co.jp -チャート -株価 -指数情報 -為替レート",
 )
 
 
@@ -67,6 +68,75 @@ NEWS_SOURCE_NAMES = (
     "ウォール・ストリート・ジャーナル",
     "相場関連ニュース",
 )
+
+
+BLOCKED_NEWS_PHRASES = (
+    "指数情報・推移",
+    "為替レート・相場",
+    "リアルタイムチャート",
+    "株価チャート",
+    "株価情報",
+    "Yahoo!ファイナンス",
+    "Yahoo!フリマ",
+    "PayPayフリマ",
+    "REVITAL GOLD",
+    "ランチ・シェイミング",
+    "いじめ",
+)
+
+
+def is_quote_or_market_page(title: str, source: str, link: str) -> bool:
+    combined = f"{title}\n{source}\n{link}"
+    return any(phrase in combined for phrase in BLOCKED_NEWS_PHRASES)
+
+
+MARKET_RELEVANCE_TERMS = (
+    "ドル",
+    "円",
+    "為替",
+    "円安",
+    "円高",
+    "USDJPY",
+    "GOLD",
+    "金",
+    "金利",
+    "FRB",
+    "FOMC",
+    "CPI",
+    "インフレ",
+    "雇用",
+    "GDP",
+    "株",
+    "米国株",
+    "NASDAQ",
+    "S&P",
+    "NYダウ",
+    "ダウ",
+    "債券",
+    "原油",
+    "日銀",
+    "財務相",
+    "介入",
+    "トランプ",
+    "関税",
+    "イラン",
+    "イスラエル",
+    "中国",
+    "半導体",
+    "AI",
+)
+
+
+def is_market_relevant(title: str, source: str) -> bool:
+    combined = f"{title}\n{source}"
+    return any(term in combined for term in MARKET_RELEVANCE_TERMS)
+
+
+def normalize_news_key(title: str) -> str:
+    normalized = re.sub(r"\s*[-－]\s*(Reuters|ロイター|WSJ|Yahoo!ニュース).*$", "", title)
+    normalized = re.sub(r"[（(](ロイター|Reuters|ブルームバーグ|Bloomberg)[）)]", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip().lower()
 
 
 FORBIDDEN_REPLACEMENTS = {
@@ -204,22 +274,39 @@ def fetch_markets() -> list[dict[str, Any]]:
     return [fetch_one_market(target) for target in MARKET_TARGETS]
 
 
-def fetch_news(max_items: int = 12) -> list[dict[str, str]]:
+def parse_entry_datetime(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=JST)
+    return parsed.astimezone(JST)
+
+
+def fetch_news(max_items: int = 12, max_age_hours: int = 36) -> list[dict[str, str]]:
     session = requests.Session()
     session.headers.update(
         {
             "User-Agent": (
                 "Mozilla/5.0 morning-market-check/1.0 "
                 "(RSS headline collector)"
-            )
+            ),
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
         }
     )
 
     articles: list[dict[str, str]] = []
     seen: set[str] = set()
+    now = datetime.now(JST)
+    cutoff = now - timedelta(hours=max_age_hours)
 
     for query, source_name in zip(NEWS_QUERIES, NEWS_SOURCE_NAMES):
-        encoded_query = quote_plus(query)
+        fresh_query = f"({query}) when:2d"
+        encoded_query = quote_plus(fresh_query)
         url = (
             "https://news.google.com/rss/search"
             f"?q={encoded_query}&hl=ja&gl=JP&ceid=JP:ja"
@@ -233,7 +320,7 @@ def fetch_news(max_items: int = 12) -> list[dict[str, str]]:
             logging.warning("News fetch failed for query %s: %s", query, exc)
             continue
 
-        for entry in feed.entries[:5]:
+        for entry in feed.entries[:10]:
             title = str(entry.get("title", "")).strip()
             link = str(entry.get("link", "")).strip()
             source = ""
@@ -241,24 +328,38 @@ def fetch_news(max_items: int = 12) -> list[dict[str, str]]:
                 source = str(entry.source.get("title", "")).strip()
             source = source or source_name
             published = str(entry.get("published", "")).strip()
+            published_dt = parse_entry_datetime(published)
+            if published_dt and published_dt < cutoff:
+                continue
+            if is_quote_or_market_page(title, source, link):
+                continue
+            if not is_market_relevant(title, source):
+                continue
 
             key = link or title
-            if not title or key in seen:
+            title_key = normalize_news_key(title)
+            if not title or key in seen or title_key in seen:
                 continue
 
             seen.add(key)
+            seen.add(title_key)
             articles.append(
                 {
                     "title": title,
                     "source": source,
                     "published": published,
+                    "published_jst": (
+                        published_dt.strftime("%Y/%m/%d %H:%M JST")
+                        if published_dt
+                        else "公開時刻不明"
+                    ),
+                    "published_sort": published_dt.isoformat() if published_dt else "",
                     "link": link,
                 }
             )
-            if len(articles) >= max_items:
-                return articles
 
-    return articles
+    articles.sort(key=lambda item: item.get("published_sort", ""), reverse=True)
+    return articles[:max_items]
 
 
 def format_market_lines(markets: list[dict[str, Any]]) -> str:
@@ -288,7 +389,13 @@ def format_news_for_prompt(news: list[dict[str, str]]) -> str:
     lines = []
     for index, item in enumerate(news, start=1):
         source = f' / {item["source"]}' if item.get("source") else ""
-        published = f' / {item["published"]}' if item.get("published") else ""
+        published = (
+            f' / {item["published_jst"]}'
+            if item.get("published_jst")
+            else f' / {item["published"]}'
+            if item.get("published")
+            else ""
+        )
         lines.append(f'{index}. {item["title"]}{source}{published}')
     return "\n".join(lines)
 
@@ -310,6 +417,7 @@ def generate_ai_sections(
     client = OpenAI(api_key=settings["openai_api_key"])
     market_lines = format_market_lines(markets)
     news_lines = format_news_for_prompt(news)
+    now = datetime.now(JST)
 
     instructions = """
 あなたは「投資家F」です。朝の相場メモをSlack向けに書いてください。
@@ -346,6 +454,9 @@ def generate_ai_sections(
 
     user_input = f"""
 次の相場データとニュース見出しをもとに、Slackへ送る朝の文章を作ってください。
+現在日時は {now:%Y/%m/%d %H:%M} JST です。
+ニュース見出しは公開時刻が新しい順です。昨日以前の材料を、今日新しく出た材料のように扱わないでください。
+公開時刻が古い見出しは「前日から続く材料」として扱い、今日の確認ポイントに寄せてください。
 
 必ず以下の構成で出力してください。
 
@@ -424,6 +535,14 @@ def build_slack_message(settings: dict[str, str]) -> str:
         [asdict(target)["label"] for target in MARKET_TARGETS],
         len(news),
     )
+    for index, item in enumerate(news[:5], start=1):
+        logging.info(
+            "Selected news %s: %s / %s / %s",
+            index,
+            item.get("title", ""),
+            item.get("source", ""),
+            item.get("published_jst", item.get("published", "")),
+        )
 
     return "\n\n".join(
         [
