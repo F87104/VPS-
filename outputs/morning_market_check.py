@@ -621,6 +621,21 @@ def clean_forbidden_phrases(text: str) -> str:
     return cleaned.strip()
 
 
+def remove_opening_greeting(text: str) -> str:
+    patterns = (
+        r"^こんにちは、?Fです[✨!！。\s]*",
+        r"^こんにちは、?投資家Fです[✨!！。\s]*",
+    )
+    cleaned = text.strip()
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned).lstrip()
+    return cleaned
+
+
+def strip_code_fences(text: str) -> str:
+    return text.replace("```", "'''").strip()
+
+
 def generate_ai_sections(
     settings: dict[str, str],
     markets: list[dict[str, Any]],
@@ -637,7 +652,7 @@ def generate_ai_sections(
 あなたは「投資家F」です。朝の相場メモをSlack向けに書いてください。
 
 【投資家Fの文体ルール】
-- 冒頭は必ず「こんにちは、Fです✨」から始める。
+- 冒頭の挨拶は入れない。「こんにちは、Fです✨」は使わない。
 - 一人称は必ず「私」を使用する。
 - ニュース内の固有名詞、数字、仕組みを必ず文章に組み込み、何が起きているのかを鮮明に描写する。
 - 表面的な感想を避け、その事象が相場の需給や投資家心理にどう影響するかを示す。
@@ -678,8 +693,6 @@ def generate_ai_sections(
 
 必ず以下の構成で出力してください。
 
-こんにちは、Fです✨
-
 ＼今日のマーケット🌈🐻／
 市場全体を1〜2行で。荒れている時は「荒れてますね…🚨」のように口語で書く。
 ✅ニュースや相場データの固有名詞・数字・値動きを1行で入れる
@@ -719,8 +732,7 @@ def generate_ai_sections(
     if not text:
         raise RuntimeError("OpenAI APIから空の応答が返りました。")
     text = clean_forbidden_phrases(text)
-    if not text.startswith("こんにちは、Fです✨"):
-        text = "こんにちは、Fです✨\n\n" + text
+    text = remove_opening_greeting(text)
     if not text.endswith("投資家Fより💌"):
         text = text.rstrip() + "\n\n投資家Fより💌"
     return text
@@ -732,6 +744,7 @@ def build_slack_message(settings: dict[str, str]) -> str:
     news = fetch_news()
     indicators = fetch_indicators()
     ai_sections = generate_ai_sections(settings, markets, news, indicators)
+    copy_text = strip_code_fences(ai_sections)
 
     logging.info(
         "Fetched markets=%s news_count=%s indicator_count=%s",
@@ -761,6 +774,7 @@ def build_slack_message(settings: dict[str, str]) -> str:
             f"🌅 朝イチ相場CHECK（{now:%Y/%m/%d %H:%M} JST）",
             "※自動配信です。内容は投資助言ではなく、朝の観察メモです。",
             ai_sections,
+            f"📋 コピー用\n```\n{copy_text}\n```",
         ]
     )
 
