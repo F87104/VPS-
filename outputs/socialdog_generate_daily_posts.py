@@ -43,6 +43,20 @@ F_BANNED_PHRASES = [
     "こんにちはFです",
     "こんにちは、Fです",
 ]
+POSITION_ADVICE_TERMS = [
+    "指値",
+    "ポジション",
+    "ロット",
+    "エントリー",
+    "利確",
+    "損切り",
+    "アラート",
+    "買います",
+    "売ります",
+    "買う予定",
+    "売る予定",
+    "追いかけず",
+]
 SLOT_EMOJI_FALLBACKS = {
     "朝": {
         "title": "＼おはようございます🐻🌈／",
@@ -220,6 +234,16 @@ def remove_banned_phrases(text: str) -> str:
     return text.strip()
 
 
+def find_position_advice_terms(posts: list[dict[str, str]]) -> list[str]:
+    found: list[str] = []
+    for post in posts:
+        text = post["text"]
+        for term in POSITION_ADVICE_TERMS:
+            if term in text and term not in found:
+                found.append(term)
+    return found
+
+
 def ensure_slot_emojis(post: dict[str, str], min_emojis: int = 3) -> dict[str, str]:
     text = normalize_signature(remove_banned_phrases(post["text"]))
     fallback = SLOT_EMOJI_FALLBACKS.get(post["slot"], SLOT_EMOJI_FALLBACKS["朝"])
@@ -317,7 +341,7 @@ def generate_posts() -> list[dict[str, str]]:
     style_guide = read_text_if_exists(STYLE_GUIDE_FILE)
     strategy = read_text_if_exists(STRATEGY_FILE)
 
-    instructions = """
+    base_instructions = """
 あなたは投資家F本人のX投稿案を作る編集者です。
 文体ガイドを最優先し、朝・昼・夕の3本を作ってください。
 目的は「投資家F本人がスマホで下書きしたように見える文章」です。
@@ -338,12 +362,16 @@ def generate_posts() -> list[dict[str, str]]:
 - 朝のマーケット型だけ、主要トピックを✅で3つ並べる。おはよう型の日は✅を使わなくてよい。
 - 朝は固有名詞か数字を必ず1つ以上入れる。
 - 指標が自然に入る日は「今夜の重要指標」を入れる。無理に毎回入れない。
-- 朝は後半に「Fは今日は、〜」または「〜しておこうと思います」という行動を1つ入れる。
+- 朝は後半に「どこを見るか」「何をメモするか」「どう考えるか」を1つ入れる。
 - 昼は「意味のあるゆるい声かけ」。ただの雑談は禁止。
 - 昼は読者が今日できる小さい行動を必ず1つ入れる。例: 1行メモする、5分だけ整える、予定を1つ減らす、深呼吸してから見る。
 - 昼は見た人のエネルギーが少し上がり、成長につながる声かけにする。
 - 昼は食べ物、眠気、ランチ、コーヒーを入口にしてよいが、それだけで終わらせない。
-- 夕はNY前の点検。指値、アラート、ポジション量、見送りのどれかを入れる。
+- 夕はNY前の点検。指標時刻、ニュース、値動きの見方、学びのメモにする。
+- 投資助言、売買指示、F自身のポジション、F自身の注文については書かない。
+- `指値` `ポジション` `ロット` `エントリー` `利確` `損切り` `アラート` という語は禁止。
+- `買います` `売ります` `買う予定` `売る予定` などの売買予定は禁止。
+- 代わりに `値動きのクセを見る` `ニュースへの反応を見る` `メモする` `焦って決めない` `1行だけ振り返る` のように書く。
 - 毎日同じ見え方にならないように、直近テーマを避ける。
 - チェックリストを多用しない。
 - `重要です` `考えられます` `示唆します` などのAI文体は禁止。
@@ -387,20 +415,40 @@ def generate_posts() -> list[dict[str, str]]:
 {format_json_for_prompt(trend_terms)}
 """.strip()
 
-    response = client.responses.create(
-        model=settings["openai_model"],
-        instructions=instructions,
-        input=user_input,
-        store=False,
+    retry_note = ""
+    last_posts: list[dict[str, str]] = []
+    for attempt in range(3):
+        instructions = base_instructions
+        if retry_note:
+            instructions = f"{base_instructions}\n\n前回の修正点:\n{retry_note}"
+
+        response = client.responses.create(
+            model=settings["openai_model"],
+            instructions=instructions,
+            input=user_input,
+            store=False,
+        )
+        posts = parse_posts_json(response.output_text)
+        for post in posts:
+            post = ensure_f_rhythm(post)
+            post = ensure_slot_emojis(post)
+            post["text"] = compact_post_text(post["text"])
+            post = ensure_f_rhythm(post)
+            post = ensure_slot_emojis(post)
+        last_posts = posts
+
+        found_terms = find_position_advice_terms(posts)
+        if not found_terms:
+            return posts
+        retry_note = (
+            "以下の投資助言・ポジション表現が入っていました。"
+            f"次の出力では絶対に使わないでください: {', '.join(found_terms)}"
+        )
+
+    raise RuntimeError(
+        "投資助言・ポジション表現が残ったため下書きを作成しません: "
+        + ", ".join(find_position_advice_terms(last_posts))
     )
-    posts = parse_posts_json(response.output_text)
-    for post in posts:
-        post = ensure_f_rhythm(post)
-        post = ensure_slot_emojis(post)
-        post["text"] = compact_post_text(post["text"])
-        post = ensure_f_rhythm(post)
-        post = ensure_slot_emojis(post)
-    return posts
 
 
 def write_outputs(posts: list[dict[str, str]], out_dir: Path) -> None:
