@@ -35,6 +35,8 @@
 | noteのフォロー実行確認 | 完了 |
 | noteのcron自動起動 | 8:00 / 13:00 / 20:00に設定済み |
 | X / Substack / noteの件数上限増量 | 完了 |
+| SocialDog下書き保存テスト | 完了 |
+| 投資家FのX文体研究 | 完了 |
 | GitHub push | リモートURL待ち |
 
 ## 現在のVPS構成
@@ -141,6 +143,9 @@ cron設定:
 - [outputs/run_x_daily_vps.sh](outputs/run_x_daily_vps.sh): VPSでX補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
 - [outputs/note_suki_follow_safe.py](outputs/note_suki_follow_safe.py): noteのスキ・フォロー補助ツール
 - [outputs/run_note_daily_vps.sh](outputs/run_note_daily_vps.sh): VPSでnote補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
+- [outputs/socialdog_draft_safe.py](outputs/socialdog_draft_safe.py): SocialDogへ投稿本文を入れて下書き保存するテスト用スクリプト
+- [outputs/F_STYLE_GUIDE.md](outputs/F_STYLE_GUIDE.md): X投稿をもとにした投資家Fの文体ガイド
+- [outputs/SOCIALDOG_3POST_STRATEGY.md](outputs/SOCIALDOG_3POST_STRATEGY.md): 朝昼夕3投稿の運用方針
 
 ## 動作確認コマンド
 
