@@ -16,6 +16,7 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
@@ -69,6 +70,22 @@ NEWS_SOURCE_NAMES = (
     "相場関連ニュース",
 )
 
+INDICATORS_URL = "https://fx.minkabu.jp/indicators"
+
+
+class TextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        text = data.strip()
+        if text:
+            self.parts.append(text)
+
+    def lines(self) -> list[str]:
+        return [part for part in self.parts if part]
+
 
 BLOCKED_NEWS_PHRASES = (
     "指数情報・推移",
@@ -82,6 +99,45 @@ BLOCKED_NEWS_PHRASES = (
     "REVITAL GOLD",
     "ランチ・シェイミング",
     "いじめ",
+)
+
+INDICATOR_COUNTRY_FLAGS = {
+    "日本": "🇯🇵",
+    "アメリカ": "🇺🇸",
+    "ユーロ": "🇪🇺",
+    "英国": "🇬🇧",
+    "ドイツ": "🇩🇪",
+    "カナダ": "🇨🇦",
+    "中国": "🇨🇳",
+    "豪": "🇦🇺",
+    "NZ": "🇳🇿",
+    "南ア": "🇿🇦",
+}
+
+MAJOR_INDICATOR_TERMS = (
+    "政策金利",
+    "日銀",
+    "ECB",
+    "FOMC",
+    "FRB",
+    "雇用統計",
+    "失業率",
+    "非農業部門雇用者数",
+    "新規失業保険",
+    "消費者物価指数",
+    "CPI",
+    "生産者物価指数",
+    "PPI",
+    "PCE",
+    "小売売上高",
+    "GDP",
+    "ISM",
+    "PMI",
+    "ミシガン大学",
+    "消費者信頼感",
+    "住宅着工",
+    "鉱工業生産",
+    "ZEW",
 )
 
 
@@ -362,6 +418,149 @@ def fetch_news(max_items: int = 12, max_age_hours: int = 36) -> list[dict[str, s
     return articles[:max_items]
 
 
+def parse_indicator_date(line: str) -> datetime | None:
+    match = re.search(r"(\d{4})年(\d{2})月(\d{2})日", line)
+    if not match:
+        return None
+    year, month, day = map(int, match.groups())
+    return datetime(year, month, day, tzinfo=JST)
+
+
+def parse_indicator_time(line: str) -> str | None:
+    match = re.search(r"(\d{1,2}:\d{2}|未定)", line)
+    return match.group(1) if match else None
+
+
+def clean_indicator_title(line: str) -> str:
+    title = re.sub(r"\s+[+-]?\d+(?:\.\d+)?pips.*$", "", line)
+    title = re.sub(r"\s+", " ", title)
+    return title.strip()
+
+
+def indicator_country(title: str) -> str:
+    if "・" not in title:
+        return ""
+    country = title.split("・", 1)[0]
+    return country if country in INDICATOR_COUNTRY_FLAGS else ""
+
+
+def indicator_display_name(title: str) -> str:
+    country = indicator_country(title)
+    if country:
+        title = title.split("・", 1)[1]
+    title = re.sub(r"\s+\[.+?\]", "", title)
+    title = re.sub(r"\s+", " ", title)
+    return title.strip()
+
+
+def indicator_dedupe_key(title: str, date_text: str, time_text: str) -> str:
+    display = indicator_display_name(title)
+    display = re.sub(r"\s+\d{2}/\d{2}.*$", "", display)
+    display = re.sub(r"\s+\d{2}月.*$", "", display)
+    return f"{date_text}|{time_text}|{indicator_country(title)}|{display}"
+
+
+def indicator_score(title: str, event_dt: datetime, now: datetime) -> int:
+    score = 0
+    country = indicator_country(title)
+    if country == "アメリカ":
+        score += 35
+    elif country in {"日本", "ユーロ"}:
+        score += 25
+    elif country in {"中国", "英国", "ドイツ", "カナダ"}:
+        score += 15
+
+    if any(term in title for term in MAJOR_INDICATOR_TERMS):
+        score += 70
+    if "政策金利" in title or "PPI" in title or "CPI" in title:
+        score += 15
+    if event_dt.date() == now.date() and event_dt.hour >= 18:
+        score += 10
+    return score
+
+
+def fetch_indicators(max_items: int = 5) -> list[dict[str, str]]:
+    now = datetime.now(JST)
+    horizon = now + timedelta(hours=24)
+    headers = {
+        "User-Agent": "Mozilla/5.0 morning-market-check/1.0 (indicator collector)",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+
+    try:
+        response = requests.get(INDICATORS_URL, headers=headers, timeout=20)
+        response.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        logging.warning("Indicator fetch failed: %s", exc)
+        return []
+
+    parser = TextExtractor()
+    parser.feed(response.text)
+
+    current_date: datetime | None = None
+    current_time = ""
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for line in parser.lines():
+        date_value = parse_indicator_date(line)
+        if date_value:
+            current_date = date_value
+            current_time = parse_indicator_time(line) or ""
+            continue
+
+        time_value = parse_indicator_time(line)
+        if time_value and re.fullmatch(r"\d{1,2}:\d{2}|未定", line):
+            current_time = time_value
+            continue
+
+        if not current_date or not current_time or "・" not in line:
+            continue
+
+        title = clean_indicator_title(line)
+        country = indicator_country(title)
+        if not country:
+            continue
+        if "継続受給者数" in title:
+            continue
+
+        if current_time == "未定":
+            event_dt = current_date.replace(hour=23, minute=59)
+        else:
+            hour, minute = map(int, current_time.split(":"))
+            event_dt = current_date.replace(hour=hour, minute=minute)
+
+        if not (now <= event_dt <= horizon):
+            continue
+
+        score = indicator_score(title, event_dt, now)
+        if score < 35:
+            continue
+
+        date_text = event_dt.strftime("%Y/%m/%d")
+        key = indicator_dedupe_key(title, date_text, current_time)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        items.append(
+            {
+                "time": current_time,
+                "country": country,
+                "flag": INDICATOR_COUNTRY_FLAGS.get(country, ""),
+                "title": indicator_display_name(title),
+                "datetime": event_dt.isoformat(),
+                "score": str(score),
+            }
+        )
+
+    items.sort(key=lambda item: (-int(item["score"]), item["datetime"]))
+    selected = items[:max_items]
+    selected.sort(key=lambda item: item["datetime"])
+    return selected
+
+
 def format_market_lines(markets: list[dict[str, Any]]) -> str:
     lines = ["📊 主要指数", ""]
 
@@ -400,10 +599,23 @@ def format_news_for_prompt(news: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def format_indicators_for_prompt(indicators: list[dict[str, str]]) -> str:
+    if not indicators:
+        return "今後24時間の大きめの経済指標予定を取得できませんでした。"
+
+    lines = []
+    for item in indicators:
+        lines.append(f'{item["time"]} {item["flag"]}{item["title"]}')
+    return "\n".join(lines)
+
+
 def clean_forbidden_phrases(text: str) -> str:
     cleaned = text
+    marker = "__IMPORTANT_INDICATOR__"
+    cleaned = cleaned.replace("重要指標", marker)
     for forbidden, replacement in FORBIDDEN_REPLACEMENTS.items():
         cleaned = cleaned.replace(forbidden, replacement)
+    cleaned = cleaned.replace(marker, "重要指標")
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
@@ -413,10 +625,12 @@ def generate_ai_sections(
     settings: dict[str, str],
     markets: list[dict[str, Any]],
     news: list[dict[str, str]],
+    indicators: list[dict[str, str]],
 ) -> str:
     client = OpenAI(api_key=settings["openai_api_key"])
     market_lines = format_market_lines(markets)
     news_lines = format_news_for_prompt(news)
+    indicator_lines = format_indicators_for_prompt(indicators)
     now = datetime.now(JST)
 
     instructions = """
@@ -434,7 +648,7 @@ def generate_ai_sections(
 - 需給の動きや資金の質を表す具体的な言葉を使う。例: 板の薄さ、需給の偏り、資金の逃げ足、ポジションの解消、実需の動き、流動性の低下、情報の裏側、ボラティリティの質、資金の滞留状況。
 - 強い断定は避け、含みを持たせる。例: 〜らしい、〜なのかもしれない、〜に見える。
 - 絵文字の直後に句点をつけない。文末が絵文字の場合はそのまま終わる。
-- 感情表現や絵文字は適度に使う。使える絵文字: 😺🐻🐻‍❄️🥰✅🌈🌸。
+- 感情表現や絵文字は適度に使う。使える絵文字: 😺🐻🐻‍❄️🥰✅🌈🌸🚨🦖🔥。
 - 最後は必ず「投資家Fより💌」で締める。
 
 【アクションのルール】
@@ -450,6 +664,10 @@ def generate_ai_sections(
 
 数字は入力されたものを勝手に変えないでください。
 内容は投資助言ではなく、朝の観察メモとして書いてください。
+主要トピックは必ず3つだけにしてください。
+重要指標は、入力された「重要指標候補」から選んでください。取得できていない指標名や時刻を作らないでください。
+全体は短く、Slackで一目で読める長さにしてください。
+各チェックリスト行は1行だけ、長くても60字前後にしてください。長い解説や段落は禁止です。
 """.strip()
 
     user_input = f"""
@@ -462,39 +680,21 @@ def generate_ai_sections(
 
 こんにちは、Fです✨
 
-📌 Fの朝イチ相場CHECK
-- 3〜5行で、今日どこを見たい日かを書く。
-- 私の直近の行動や観察を感じる一言を入れる。
+＼今日のマーケット🌈🐻／
+市場全体を1〜2行で。荒れている時は「荒れてますね…🚨」のように口語で書く。
+✅ニュースや相場データの固有名詞・数字・値動きを1行で入れる
+✅ニュースや相場データの固有名詞・数字・値動きを1行で入れる
+✅ニュースや相場データの固有名詞・数字・値動きを1行で入れる
+※チェック行で「主要トピック1」「トピック2」のような番号ラベルは使わない。
 
-📰 今日のニュース3選
-1. ニュース名: 1行要約
-	   Fアクション: 今日やる観察・確認を1つ。クスッとする言い回しを入れる
-   逆説メモ: 表面的な意味とは逆の可能性を1つ
-2. ニュース名: 1行要約
-	   Fアクション: 今日やる観察・確認を1つ。クスッとする言い回しを入れる
-   逆説メモ: 表面的な意味とは逆の可能性を1つ
-3. ニュース名: 1行要約
-	   Fアクション: 今日やる観察・確認を1つ。クスッとする言い回しを入れる
-   逆説メモ: 表面的な意味とは逆の可能性を1つ
+今夜の重要指標
+時刻  国旗 指標名
+時刻  国旗 指標名
 
-💌 Fの投稿案（3つのバリエーション）
-案1
-＼📣ニュースタイトル　絵文字🐻／
-### 要約：今、何が起きているのか😺
-### まとめ：なぜ、そして何が気になるのか🐻‍❄️
-### 深掘り：Fが考える「今後」と「確認ポイント」🌈
-
-案2
-＼📣ニュースタイトル　絵文字🐻／
-### 要約：今、何が起きているのか😺
-### まとめ：なぜ、そして何が気になるのか🐻‍❄️
-### 深掘り：Fが考える「今後」と「確認ポイント」🌈
-
-案3
-＼📣ニュースタイトル　絵文字🐻／
-### 要約：今、何が起きているのか😺
-### まとめ：なぜ、そして何が気になるのか🐻‍❄️
-### 深掘り：Fが考える「今後」と「確認ポイント」🌈
+最後に2〜3行で、Fらしい短い見方を書く。
+「私は〜を見ています」のように直近の行動を1つ入れる。
+遊び心のある一言を入れる。例: 板が薄い日は、指値を置く手が忍者になりがち🦖🔥
+投資助言に見える断定は避ける。
 
 投資家Fより💌
 
@@ -503,6 +703,9 @@ def generate_ai_sections(
 
 ニュース見出し:
 {news_lines}
+
+重要指標候補:
+{indicator_lines}
 """.strip()
 
     response = client.responses.create(
@@ -527,13 +730,14 @@ def build_slack_message(settings: dict[str, str]) -> str:
     now = datetime.now(JST)
     markets = fetch_markets()
     news = fetch_news()
-    ai_sections = generate_ai_sections(settings, markets, news)
-    market_lines = format_market_lines(markets)
+    indicators = fetch_indicators()
+    ai_sections = generate_ai_sections(settings, markets, news, indicators)
 
     logging.info(
-        "Fetched markets=%s news_count=%s",
+        "Fetched markets=%s news_count=%s indicator_count=%s",
         [asdict(target)["label"] for target in MARKET_TARGETS],
         len(news),
+        len(indicators),
     )
     for index, item in enumerate(news[:5], start=1):
         logging.info(
@@ -543,11 +747,18 @@ def build_slack_message(settings: dict[str, str]) -> str:
             item.get("source", ""),
             item.get("published_jst", item.get("published", "")),
         )
+    for index, item in enumerate(indicators, start=1):
+        logging.info(
+            "Selected indicator %s: %s %s%s",
+            index,
+            item.get("time", ""),
+            item.get("flag", ""),
+            item.get("title", ""),
+        )
 
     return "\n\n".join(
         [
             f"🌅 朝イチ相場CHECK（{now:%Y/%m/%d %H:%M} JST）",
-            market_lines,
             "※自動配信です。内容は投資助言ではなく、朝の観察メモです。",
             ai_sections,
         ]
