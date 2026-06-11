@@ -8,6 +8,7 @@ import argparse
 import importlib.util
 import json
 import logging
+import random
 import re
 import sys
 from datetime import datetime
@@ -59,7 +60,7 @@ POSITION_ADVICE_TERMS = [
 ]
 SLOT_EMOJI_FALLBACKS = {
     "朝": {
-        "title": "＼おはようございます🐻🌈／",
+        "title": "＼今日の注目ニュース🌈🐻／",
         "inline": "✅",
         "ending": "😺",
     },
@@ -73,6 +74,26 @@ SLOT_EMOJI_FALLBACKS = {
         "inline": "✅",
         "ending": "😺",
     },
+}
+SLOT_TITLE_OPTIONS = {
+    "昼": [
+        "＼お昼の小さな前進😺🌸／",
+        "＼午後の整えタイム🌷🐻／",
+        "＼Fの昼メモ🥰🌈／",
+        "＼午後に効くひとこと😺✨／",
+        "＼お昼のエネルギー補給🌸🐻／",
+    ],
+    "夕": [
+        "＼NY前のニュース整理🐻‍❄️🌈／",
+        "＼夜のマーケットメモ😺🌙／",
+        "＼21時台前のFメモ🌈🐻／",
+        "＼NY前に見たい材料🐻‍❄️✨／",
+        "＼夜の相場メモ😺🌸／",
+    ],
+}
+FIXED_TITLE_PREFIXES = {
+    "昼": ("＼お昼のひとこと",),
+    "夕": ("＼NY前の点検",),
 }
 
 
@@ -277,6 +298,25 @@ def ensure_slot_emojis(post: dict[str, str], min_emojis: int = 3) -> dict[str, s
     return post
 
 
+def rotate_fixed_title(post: dict[str, str]) -> dict[str, str]:
+    slot = post["slot"]
+    options = SLOT_TITLE_OPTIONS.get(slot)
+    prefixes = FIXED_TITLE_PREFIXES.get(slot, ())
+    if not options or not prefixes:
+        return post
+
+    lines = post["text"].splitlines()
+    first_index = next((index for index, line in enumerate(lines) if line.strip()), None)
+    if first_index is None:
+        return post
+
+    first_line = lines[first_index].strip()
+    if any(first_line.startswith(prefix) for prefix in prefixes):
+        lines[first_index] = random.choice(options)
+        post["text"] = "\n".join(lines)
+    return post
+
+
 def ensure_f_rhythm(post: dict[str, str]) -> dict[str, str]:
     text = normalize_signature(remove_banned_phrases(post["text"]))
     text = re.sub(r"。([^\n])", "。\n\\1", text)
@@ -358,11 +398,15 @@ def generate_posts() -> list[dict[str, str]]:
 - 日本語を自然にする。声に出して不自然な文は避ける。
 - 1投稿1テーマ。
 - 1投稿は260字以内を目安にする。
-- 朝は `＼おはようございます🐻🌈／` 型と `＼今日のマーケット🌈🐻／` 型を日替わりで使う。
-- 朝のマーケット型だけ、主要トピックを✅で3つ並べる。おはよう型の日は✅を使わなくてよい。
-- 朝は固有名詞か数字を必ず1つ以上入れる。
+- 朝は `＼今日の注目ニュース🌈🐻／` から始める。
+- 朝は注目ニュースを✅で3つ箇条書きする。
+- 朝のニュースは、インプレッションを狙える固有名詞・数字・意外性・話題性を優先する。
+- 朝は固有名詞か数字を各✅に必ず入れる。
 - 指標が自然に入る日は「今夜の重要指標」を入れる。無理に毎回入れない。
 - 朝は後半に「どこを見るか」「何をメモするか」「どう考えるか」を1つ入れる。
+- 昼と夕のタイトルは固定しない。`＼お昼のひとこと／` と `＼NY前の点検／` は毎回使わない。
+- 昼タイトル例: `＼午後の整えタイム🌷🐻／` `＼Fの昼メモ🥰🌈／`。
+- 夕タイトル例: `＼NY前のニュース整理🐻‍❄️🌈／` `＼夜のマーケットメモ😺🌙／`。
 - 昼は「意味のあるゆるい声かけ」。ただの雑談は禁止。
 - 昼は読者が今日できる小さい行動を必ず1つ入れる。例: 1行メモする、5分だけ整える、予定を1つ減らす、深呼吸してから見る。
 - 昼は見た人のエネルギーが少し上がり、成長につながる声かけにする。
@@ -431,9 +475,11 @@ def generate_posts() -> list[dict[str, str]]:
         posts = parse_posts_json(response.output_text)
         for post in posts:
             post = ensure_f_rhythm(post)
+            post = rotate_fixed_title(post)
             post = ensure_slot_emojis(post)
             post["text"] = compact_post_text(post["text"])
             post = ensure_f_rhythm(post)
+            post = rotate_fixed_title(post)
             post = ensure_slot_emojis(post)
         last_posts = posts
 
