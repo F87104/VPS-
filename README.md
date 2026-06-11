@@ -37,7 +37,10 @@
 | X / Substack / noteの件数上限増量 | 完了 |
 | SocialDog下書き保存テスト | 完了 |
 | 投資家FのX文体研究 | 完了 |
-| GitHub push | リモートURL待ち |
+| SocialDog VPS仮想デスクトップログイン | 完了 |
+| SocialDog朝昼夕3投稿の自動下書き保存 | 毎朝5:40 JSTに設定済み |
+| SocialDog投資家F文体完全再現ルール | 完了 |
+| GitHub push | 完了 |
 
 ## 現在のVPS構成
 
@@ -144,8 +147,43 @@ cron設定:
 - [outputs/note_suki_follow_safe.py](outputs/note_suki_follow_safe.py): noteのスキ・フォロー補助ツール
 - [outputs/run_note_daily_vps.sh](outputs/run_note_daily_vps.sh): VPSでnote補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
 - [outputs/socialdog_draft_safe.py](outputs/socialdog_draft_safe.py): SocialDogへ投稿本文を入れて下書き保存するテスト用スクリプト
+- [outputs/socialdog_generate_daily_posts.py](outputs/socialdog_generate_daily_posts.py): 相場・ニュース・急上昇候補から朝昼夕3投稿を生成するスクリプト
+- [outputs/run_socialdog_daily_drafts_vps.sh](outputs/run_socialdog_daily_drafts_vps.sh): VPSで毎朝5:40にSocialDog下書き保存を実行するラッパースクリプト
+- [outputs/start_socialdog_login_desktop_vps.sh](outputs/start_socialdog_login_desktop_vps.sh): VPSの仮想デスクトップでSocialDogへログインするための補助スクリプト
 - [outputs/F_STYLE_GUIDE.md](outputs/F_STYLE_GUIDE.md): X投稿をもとにした投資家Fの文体ガイド
 - [outputs/SOCIALDOG_3POST_STRATEGY.md](outputs/SOCIALDOG_3POST_STRATEGY.md): 朝昼夕3投稿の運用方針
+
+## SocialDog朝昼夕下書き
+
+VPS上でSocialDogに一度ログインし、以下のプロフィールにログイン状態を保存しています。
+
+```text
+/home/ubuntu/f_tools/.socialdog_profile
+```
+
+毎朝5:40 JSTに、朝・昼・夕の3本を生成してSocialDogの下書きに保存します。Macの電源が入っていなくてもVPS側で動きます。
+
+```cron
+40 5 * * * /bin/bash /home/ubuntu/f_tools/run_socialdog_daily_drafts_vps.sh >> /home/ubuntu/f_tools/logs/socialdog_daily_drafts_cron.log 2>&1
+```
+
+下書き生成の文体は、以下を優先します。
+
+- 朝は `＼今日のマーケット🌈🐻／` から始める
+- 朝は `✅` で主要トピックを3つ入れる
+- 重要指標と時刻を入れる
+- 昼はゆるい日常投稿にする
+- 夕はNY前の指値、アラート、ポジション量の点検に寄せる
+- 各投稿に絵文字を3〜6個入れる
+- 署名は必ず `投資家Fより💌`
+
+ログ:
+
+```text
+/home/ubuntu/f_tools/logs/socialdog_daily_drafts_last.log
+/home/ubuntu/f_tools/logs/socialdog_daily_drafts.log
+/home/ubuntu/f_tools/logs/socialdog_daily_drafts_cron.log
+```
 
 ## 動作確認コマンド
 

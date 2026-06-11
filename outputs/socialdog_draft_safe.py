@@ -323,51 +323,78 @@ def save_diagnostics(page: Page) -> None:
 
 def run(args: argparse.Namespace) -> int:
     setup_logging()
-    post_text = load_post_text(args)
-    write_clipboard(post_text)
-    logging.info("Draft text ready. chars=%s", len(post_text))
+    post_text = ""
+    if not args.login_only:
+        post_text = load_post_text(args)
+        write_clipboard(post_text)
+        logging.info("Draft text ready. chars=%s", len(post_text))
 
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            str(Path(args.profile_dir).expanduser()),
-            headless=args.headless,
-            viewport={"width": 1440, "height": 1000},
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        page = context.pages[0] if context.pages else context.new_page()
-        page.goto(args.url, wait_until="domcontentloaded", timeout=60000)
-        logging.info("Opened SocialDog: %s", args.url)
-
-        wait_for_login(page, args.login_wait_seconds)
-
-        filled = fill_composer(page, post_text)
-        if filled:
-            logging.info("Text is in the current composer.")
+        browser = None
+        if args.storage_state:
+            browser = p.chromium.launch(
+                headless=args.headless,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            context = browser.new_context(
+                storage_state=str(Path(args.storage_state).expanduser()),
+                viewport={"width": 1440, "height": 1000},
+                locale="ja-JP",
+            )
+            page = context.new_page()
         else:
-            logging.info("Composer not found on current page. Trying to open a post composer.")
-            try_open_composer(page)
-            page.wait_for_timeout(2500)
+            context = p.chromium.launch_persistent_context(
+                str(Path(args.profile_dir).expanduser()),
+                headless=args.headless,
+                viewport={"width": 1440, "height": 1000},
+                locale="ja-JP",
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            page = context.pages[0] if context.pages else context.new_page()
+        try:
+            page.goto(args.url, wait_until="domcontentloaded", timeout=60000)
+            logging.info("Opened SocialDog: %s", args.url)
+
+            wait_for_login(page, args.login_wait_seconds)
+
+            if args.login_only:
+                logging.info("Login-only mode. Keeping browser open for %s seconds.", args.keep_open_seconds)
+                if args.keep_open_seconds > 0:
+                    time.sleep(args.keep_open_seconds)
+                return 0
+
             filled = fill_composer(page, post_text)
             if filled:
-                logging.info("Text is in the composer.")
-
-        if filled and args.save_draft:
-            if save_as_draft(page):
-                logging.info("Done. Draft was saved in SocialDog.")
+                logging.info("Text is in the current composer.")
             else:
-                logging.warning("Text was filled, but draft save failed.")
-        elif filled:
-            logging.info("Done. Text is in the composer. No submit/save button was clicked.")
-        else:
-            if not filled:
-                save_diagnostics(page)
-                logging.warning(
-                    "Composer was not found. The draft text is copied to clipboard, so paste it manually."
-                )
+                logging.info("Composer not found on current page. Trying to open a post composer.")
+                try_open_composer(page)
+                page.wait_for_timeout(2500)
+                filled = fill_composer(page, post_text)
+                if filled:
+                    logging.info("Text is in the composer.")
 
-        logging.info("Keeping browser open for %s seconds.", args.keep_open_seconds)
-        time.sleep(args.keep_open_seconds)
-        context.close()
+            if filled and args.save_draft:
+                if save_as_draft(page):
+                    logging.info("Done. Draft was saved in SocialDog.")
+                else:
+                    logging.warning("Text was filled, but draft save failed.")
+            elif filled:
+                logging.info("Done. Text is in the composer. No submit/save button was clicked.")
+            else:
+                if not filled:
+                    save_diagnostics(page)
+                    logging.warning(
+                        "Composer was not found. The draft text is copied to clipboard, so paste it manually."
+                    )
+
+            logging.info("Keeping browser open for %s seconds.", args.keep_open_seconds)
+            if args.keep_open_seconds > 0:
+                time.sleep(args.keep_open_seconds)
+        finally:
+            context.close()
+            if browser is not None:
+                browser.close()
     return 0
 
 
@@ -375,6 +402,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Safely fill SocialDog composer.")
     parser.add_argument("--url", default=DEFAULT_URL)
     parser.add_argument("--profile-dir", default=str(DEFAULT_PROFILE_DIR))
+    parser.add_argument("--storage-state")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--login-wait-seconds", type=int, default=300)
     parser.add_argument("--keep-open-seconds", type=int, default=600)
@@ -382,6 +410,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--text")
     parser.add_argument("--from-vps", action="store_true")
     parser.add_argument("--save-draft", action="store_true")
+    parser.add_argument("--login-only", action="store_true")
     parser.add_argument("--vps-host", default=DEFAULT_VPS_HOST)
     parser.add_argument("--vps-user", default=DEFAULT_VPS_USER)
     parser.add_argument("--vps-key", default=str(DEFAULT_VPS_KEY))
