@@ -45,7 +45,7 @@ F_BANNED_PHRASES = [
 ]
 SLOT_EMOJI_FALLBACKS = {
     "朝": {
-        "title": "＼今日のマーケット🌈🐻／",
+        "title": "＼おはようございます🐻🌈／",
         "inline": "✅",
         "ending": "😺",
     },
@@ -261,11 +261,8 @@ def ensure_f_rhythm(post: dict[str, str]) -> dict[str, str]:
 
     if post["slot"] == "朝":
         first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
-        if first_line and first_line != SLOT_EMOJI_FALLBACKS["朝"]["title"]:
-            if first_line.startswith("＼") and first_line.endswith("／"):
-                text = text.replace(first_line, SLOT_EMOJI_FALLBACKS["朝"]["title"], 1)
-            else:
-                text = f"{SLOT_EMOJI_FALLBACKS['朝']['title']}\n\n{text}"
+        if first_line and not (first_line.startswith("＼") and first_line.endswith("／")):
+            text = f"{SLOT_EMOJI_FALLBACKS['朝']['title']}\n\n{text}"
     elif post["slot"] == "昼":
         if not text.lstrip().startswith("＼"):
             text = f"{SLOT_EMOJI_FALLBACKS['昼']['title']}\n\n{text}"
@@ -337,10 +334,11 @@ def generate_posts() -> list[dict[str, str]]:
 - 日本語を自然にする。声に出して不自然な文は避ける。
 - 1投稿1テーマ。
 - 1投稿は260字以内を目安にする。
-- 朝は `＼今日のマーケット🌈🐻／` から始める。
-- 朝は主要トピックを✅で3つ並べ、固有名詞か数字を必ず入れる。
-- 朝は「今夜の重要指標」を入れる。指標がなければ「指標より値動き優先」と書く。
-- 朝は最後に「私は今日は、〜」という行動を1つ入れる。
+- 朝は `＼おはようございます🐻🌈／` 型と `＼今日のマーケット🌈🐻／` 型を日替わりで使う。
+- 朝のマーケット型だけ、主要トピックを✅で3つ並べる。おはよう型の日は✅を使わなくてよい。
+- 朝は固有名詞か数字を必ず1つ以上入れる。
+- 指標が自然に入る日は「今夜の重要指標」を入れる。無理に毎回入れない。
+- 朝は後半に「Fは今日は、〜」または「〜しておこうと思います」という行動を1つ入れる。
 - 昼はゆる日常。相場へ無理につなげない。
 - 夕はNY前の点検。指値、アラート、ポジション量、見送りのどれかを入れる。
 - 毎日同じ見え方にならないように、直近テーマを避ける。
@@ -354,6 +352,9 @@ def generate_posts() -> list[dict[str, str]]:
 - `こんにちはFです` は絶対に使わない。
 - 講義口調ではなく、スマホのメモっぽく短く改行する。
 - かわいい比喩を1つ入れてよいが、相場投稿では最後に行動へ戻す。
+- きれいなレポートより、Fの人間味を優先する。
+- 自虐をかわいく入れる。例: 自分の起動で精一杯、失敗トレードのコレクター、冬眠します。
+- 朝と昼は `今日もよろしくお願いします🥰` を入れてよい。
 """.strip()
 
     user_input = f"""

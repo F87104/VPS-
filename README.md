@@ -40,6 +40,7 @@
 | SocialDog VPS仮想デスクトップログイン | 完了 |
 | SocialDog朝昼夕3投稿の自動下書き保存 | 毎朝5:40 JSTに設定済み |
 | SocialDog投資家F文体完全再現ルール | 完了 |
+| 投資家F文体の再分析 / 品質改善 | 完了 |
 | GitHub push | 完了 |
 
 ## 現在のVPS構成
@@ -151,6 +152,7 @@ cron設定:
 - [outputs/run_socialdog_daily_drafts_vps.sh](outputs/run_socialdog_daily_drafts_vps.sh): VPSで毎朝5:40にSocialDog下書き保存を実行するラッパースクリプト
 - [outputs/start_socialdog_login_desktop_vps.sh](outputs/start_socialdog_login_desktop_vps.sh): VPSの仮想デスクトップでSocialDogへログインするための補助スクリプト
 - [outputs/F_STYLE_GUIDE.md](outputs/F_STYLE_GUIDE.md): X投稿をもとにした投資家Fの文体ガイド
+- [outputs/F_STYLE_DEEP_ANALYSIS.md](outputs/F_STYLE_DEEP_ANALYSIS.md): X公開投稿を再分析した文体深掘りメモ
 - [outputs/SOCIALDOG_3POST_STRATEGY.md](outputs/SOCIALDOG_3POST_STRATEGY.md): 朝昼夕3投稿の運用方針
 
 ## SocialDog朝昼夕下書き
