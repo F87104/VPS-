@@ -58,6 +58,18 @@ POSITION_ADVICE_TERMS = [
     "売る予定",
     "追いかけず",
 ]
+VAGUE_CLOSER_TERMS = [
+    "どの材料に資金が反応",
+    "1行だけメモ",
+    "メモします",
+    "同じ方向を向く",
+    "焦って決めない",
+    "小さい整理",
+    "明日の自分への貯金",
+    "貯金みたい",
+    "整える。",
+    "見ていきます",
+]
 SLOT_EMOJI_FALLBACKS = {
     "朝": {
         "title": "＼今日の注目ニュース🌈🐻／",
@@ -78,7 +90,7 @@ SLOT_EMOJI_FALLBACKS = {
 SLOT_TITLE_OPTIONS = {
     "昼": [
         "＼お昼の小さな前進😺🌸／",
-        "＼午後の整えタイム🌷🐻／",
+        "＼午後の一歩メモ🌷🐻／",
         "＼Fの昼メモ🥰🌈／",
         "＼午後に効くひとこと😺✨／",
         "＼お昼のエネルギー補給🌸🐻／",
@@ -265,6 +277,16 @@ def find_position_advice_terms(posts: list[dict[str, str]]) -> list[str]:
     return found
 
 
+def find_vague_closer_terms(posts: list[dict[str, str]]) -> list[str]:
+    found: list[str] = []
+    for post in posts:
+        text = post["text"]
+        for term in VAGUE_CLOSER_TERMS:
+            if term in text and term not in found:
+                found.append(term)
+    return found
+
+
 def ensure_slot_emojis(post: dict[str, str], min_emojis: int = 3) -> dict[str, str]:
     text = normalize_signature(remove_banned_phrases(post["text"]))
     fallback = SLOT_EMOJI_FALLBACKS.get(post["slot"], SLOT_EMOJI_FALLBACKS["朝"])
@@ -405,7 +427,7 @@ def generate_posts() -> list[dict[str, str]]:
 - 指標が自然に入る日は「今夜の重要指標」を入れる。無理に毎回入れない。
 - 朝は後半に「どこを見るか」「何をメモするか」「どう考えるか」を1つ入れる。
 - 昼と夕のタイトルは固定しない。`＼お昼のひとこと／` と `＼NY前の点検／` は毎回使わない。
-- 昼タイトル例: `＼午後の整えタイム🌷🐻／` `＼Fの昼メモ🥰🌈／`。
+- 昼タイトル例: `＼午後の一歩メモ🌷🐻／` `＼Fの昼メモ🥰🌈／`。
 - 夕タイトル例: `＼NY前のニュース整理🐻‍❄️🌈／` `＼夜のマーケットメモ😺🌙／`。
 - 昼は「意味のあるゆるい声かけ」。ただの雑談は禁止。
 - 昼は読者が今日できる小さい行動を必ず1つ入れる。例: 1行メモする、5分だけ整える、予定を1つ減らす、深呼吸してから見る。
@@ -415,7 +437,7 @@ def generate_posts() -> list[dict[str, str]]:
 - 投資助言、売買指示、F自身のポジション、F自身の注文については書かない。
 - `指値` `ポジション` `ロット` `エントリー` `利確` `損切り` `アラート` という語は禁止。
 - `買います` `売ります` `買う予定` `売る予定` などの売買予定は禁止。
-- 代わりに `値動きのクセを見る` `ニュースへの反応を見る` `メモする` `焦って決めない` `1行だけ振り返る` のように書く。
+- 代わりに `21:30後の最初の15分で米金利・GOLD・NASDAQの順番を見る` `ニュース見出しとチャートの初動を同じ紙に並べる` のように書く。
 - 毎日同じ見え方にならないように、直近テーマを避ける。
 - チェックリストを多用しない。
 - `重要です` `考えられます` `示唆します` などのAI文体は禁止。
@@ -432,6 +454,10 @@ def generate_posts() -> list[dict[str, str]]:
 - 朝と昼は `今日もよろしくお願いします🥰` を入れてよい。
 - 意味のないランチネタ、食べ物ネタ、眠いだけの投稿は禁止。
 - オチだけで終わる投稿は禁止。必ず気づきや行動へ着地する。
+- 締めの言葉は抽象禁止。`どの材料に資金が反応` `1行だけメモ` `焦って決めない` `明日の自分への貯金` は使わない。
+- 締めは必ず具体化する。朝なら `ECB後に、ユーロ・米金利・GOLDのどれが先に動いたかを残す` のように、対象を2〜3個書く。
+- 昼の締めは `メモ帳の一番上に今日やる1つを書く` `カレンダーから予定を1つ消す` のように、読者の手が動く言葉にする。
+- 夕の締めは `21:30後の最初の15分で、米金利・GOLD・NASDAQの順番を見る` のように、時間や対象を入れる。
 """.strip()
 
     user_input = f"""
@@ -484,16 +510,25 @@ def generate_posts() -> list[dict[str, str]]:
         last_posts = posts
 
         found_terms = find_position_advice_terms(posts)
-        if not found_terms:
+        vague_terms = find_vague_closer_terms(posts)
+        if not found_terms and not vague_terms:
             return posts
-        retry_note = (
-            "以下の投資助言・ポジション表現が入っていました。"
-            f"次の出力では絶対に使わないでください: {', '.join(found_terms)}"
-        )
+        retry_parts = []
+        if found_terms:
+            retry_parts.append(
+                "以下の投資助言・ポジション表現が入っていました。"
+                f"次の出力では絶対に使わないでください: {', '.join(found_terms)}"
+            )
+        if vague_terms:
+            retry_parts.append(
+                "締めの語彙が抽象的でした。"
+                f"次の出力では絶対に使わず、時間・対象・手順が見える言葉にしてください: {', '.join(vague_terms)}"
+            )
+        retry_note = "\n".join(retry_parts)
 
     raise RuntimeError(
-        "投資助言・ポジション表現が残ったため下書きを作成しません: "
-        + ", ".join(find_position_advice_terms(last_posts))
+        "禁止表現または抽象的な締め言葉が残ったため下書きを作成しません: "
+        + ", ".join(find_position_advice_terms(last_posts) + find_vague_closer_terms(last_posts))
     )
 
 
