@@ -5,6 +5,7 @@ BASE_DIR="/home/ubuntu/f_tools"
 LOG_DIR="$BASE_DIR/logs"
 SCRIPT="$BASE_DIR/auto_like_v11_2_1_limited.py"
 NOTIFIER="$BASE_DIR/notify_slack_summary.py"
+PYTHON_BIN="${PYTHON_BIN:-$BASE_DIR/.venv/bin/python}"
 CONFIG_PATH="${X_CONFIG:-/home/ubuntu/prometheus/config.ini}"
 STORAGE_STATE="${X_STORAGE_STATE:-/home/ubuntu/prometheus/x_storage_state.json}"
 MAX_ACTIONS="${X_MAX_ACTIONS:-18}"
@@ -18,6 +19,10 @@ LAST_LOG="$LOG_DIR/x_daily_last.log"
 EXTRA_ARGS=()
 if [ -f "$STORAGE_STATE" ]; then
   EXTRA_ARGS+=(--storage-state "$STORAGE_STATE")
+fi
+
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="/usr/bin/python3"
 fi
 
 mkdir -p "$LOG_DIR"
@@ -35,7 +40,7 @@ cd "$BASE_DIR" || exit 1
   fi
 } > "$LAST_LOG"
 
-/usr/bin/python3 "$SCRIPT" \
+"$PYTHON_BIN" "$SCRIPT" \
   --timeline \
   --headless \
   --config "$CONFIG_PATH" \
@@ -56,7 +61,7 @@ status=$?
 
 cat "$LAST_LOG" >> "$MASTER_LOG"
 
-/usr/bin/python3 "$NOTIFIER" \
+"$PYTHON_BIN" "$NOTIFIER" \
   --title "Xいいね・フォロー自動実行" \
   --status "$status" \
   --log "$LAST_LOG" \

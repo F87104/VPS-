@@ -1,0 +1,14 @@
+# VPS Morning Slack Tools cron template
+# Install with:
+#   crontab /home/ubuntu/VPS-/outputs/cron_vps_template.txt
+
+0 6 * * * /home/ubuntu/f_tools/.venv/bin/python /home/ubuntu/f_tools/slack_test.py >> /home/ubuntu/f_tools/logs/cron.log 2>&1
+0 12 * * * /bin/bash /home/ubuntu/f_tools/run_substack_daily_vps.sh >> /home/ubuntu/f_tools/logs/substack_daily_cron.log 2>&1
+0 7 * * * /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh >> /home/ubuntu/f_tools/logs/x_daily_cron.log 2>&1
+30 12 * * * /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh >> /home/ubuntu/f_tools/logs/x_daily_cron.log 2>&1
+0 19 * * * /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh >> /home/ubuntu/f_tools/logs/x_daily_cron.log 2>&1
+0 8 * * * /bin/bash /home/ubuntu/f_tools/run_note_daily_vps.sh >> /home/ubuntu/f_tools/logs/note_daily_cron.log 2>&1
+0 13 * * * /bin/bash /home/ubuntu/f_tools/run_note_daily_vps.sh >> /home/ubuntu/f_tools/logs/note_daily_cron.log 2>&1
+0 20 * * * /bin/bash /home/ubuntu/f_tools/run_note_daily_vps.sh >> /home/ubuntu/f_tools/logs/note_daily_cron.log 2>&1
+40 5 * * * /bin/bash /home/ubuntu/f_tools/run_socialdog_daily_drafts_vps.sh >> /home/ubuntu/f_tools/logs/socialdog_daily_drafts_cron.log 2>&1
+

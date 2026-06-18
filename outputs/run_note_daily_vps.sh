@@ -5,6 +5,7 @@ BASE_DIR="/home/ubuntu/f_tools"
 LOG_DIR="$BASE_DIR/logs"
 SCRIPT="$BASE_DIR/note_suki_follow_safe.py"
 NOTIFIER="$BASE_DIR/notify_slack_summary.py"
+PYTHON_BIN="${PYTHON_BIN:-$BASE_DIR/.venv/bin/python}"
 STORAGE_STATE="${NOTE_STORAGE_STATE:-/home/ubuntu/prometheus/note_storage_state.json}"
 NOTE_URL="${NOTE_URL:-https://note.com/}"
 NOTE_KEYWORDS="${NOTE_KEYWORDS:-}"
@@ -18,6 +19,10 @@ LAST_LOG="$LOG_DIR/note_daily_last.log"
 EXTRA_ARGS=()
 if [ -f "$STORAGE_STATE" ]; then
   EXTRA_ARGS+=(--storage-state "$STORAGE_STATE")
+fi
+
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="/usr/bin/python3"
 fi
 
 mkdir -p "$LOG_DIR"
@@ -36,7 +41,7 @@ cd "$BASE_DIR" || exit 1
   fi
 } > "$LAST_LOG"
 
-/usr/bin/python3 "$SCRIPT" \
+"$PYTHON_BIN" "$SCRIPT" \
   --headless \
   --execute \
   --yes \
@@ -63,7 +68,7 @@ status=$?
 
 cat "$LAST_LOG" >> "$MASTER_LOG"
 
-/usr/bin/python3 "$NOTIFIER" \
+"$PYTHON_BIN" "$NOTIFIER" \
   --title "noteスキ・フォロー自動実行" \
   --status "$status" \
   --log "$LAST_LOG" \

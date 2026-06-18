@@ -5,11 +5,16 @@ BASE_DIR="/home/ubuntu/f_tools"
 LOG_DIR="$BASE_DIR/logs"
 SCRIPT="$BASE_DIR/substack_like_follow_safe.py"
 NOTIFIER="$BASE_DIR/notify_slack_summary.py"
+PYTHON_BIN="${PYTHON_BIN:-$BASE_DIR/.venv/bin/python}"
 MAX_ACTIONS="${SUBSTACK_MAX_ACTIONS:-13}"
 MAX_LIKES="${SUBSTACK_MAX_LIKES:-10}"
 MAX_FOLLOWS="${SUBSTACK_MAX_FOLLOWS:-3}"
 MASTER_LOG="$LOG_DIR/substack_daily.log"
 LAST_LOG="$LOG_DIR/substack_daily_last.log"
+
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="/usr/bin/python3"
+fi
 
 mkdir -p "$LOG_DIR"
 cd "$BASE_DIR" || exit 1
@@ -20,7 +25,7 @@ cd "$BASE_DIR" || exit 1
   echo "mode=headless execute=yes max_actions=$MAX_ACTIONS max_likes=$MAX_LIKES max_follows=$MAX_FOLLOWS"
 } > "$LAST_LOG"
 
-/usr/bin/python3 "$SCRIPT" \
+"$PYTHON_BIN" "$SCRIPT" \
   --headless \
   --execute \
   --yes \
@@ -43,7 +48,7 @@ status=$?
 
 cat "$LAST_LOG" >> "$MASTER_LOG"
 
-/usr/bin/python3 "$NOTIFIER" \
+"$PYTHON_BIN" "$NOTIFIER" \
   --title "Substackいいね・フォロー自動実行" \
   --status "$status" \
   --log "$LAST_LOG" \
