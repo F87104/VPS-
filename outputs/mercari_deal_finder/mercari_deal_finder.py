@@ -598,12 +598,20 @@ def comparison_terms_for_keyword(keyword: str, config: dict[str, Any]) -> list[s
     return terms
 
 
+def compare_term_matches_text(term: str, text: str) -> bool:
+    normalized = normalize_compare_text(term)
+    if not normalized:
+        return False
+    if re.fullmatch(r"[a-z0-9][a-z0-9\s.\-]*[a-z0-9]", normalized):
+        return re.search(rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])", text) is not None
+    return normalized in text
+
+
 def configured_terms_in_title(title: str, keyword: str, config: dict[str, Any]) -> list[str]:
     text = normalize_compare_text(title)
     found: list[str] = []
     for term in comparison_terms_for_keyword(keyword, config):
-        normalized = normalize_compare_text(term)
-        if normalized and normalized in text:
+        if compare_term_matches_text(term, text):
             found.append(term)
     return dedupe_preserve_order(found)
 
@@ -699,7 +707,7 @@ def comparable_sold_listings(
 
     for sold in sold_listings:
         sold_text = normalize_compare_text(sold.title)
-        matched_terms = [term for term in normalized_terms if term and term in sold_text]
+        matched_terms = [term for term in normalized_terms if compare_term_matches_text(term, sold_text)]
         required_terms = min(
             len(normalized_terms),
             int(config.get("max_required_comparison_terms", 2)),
