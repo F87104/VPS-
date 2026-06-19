@@ -253,9 +253,41 @@ SURFACE_LEVEL_PHRASES = (
     "見守りたい",
 )
 
+CHECKLIST_OPINION_PHRASES = (
+    "を見る",
+    "見たい",
+    "主役",
+    "資金",
+    "需給",
+    "反応",
+    "買い手",
+    "売り手",
+    "短期筋",
+    "輸入勢",
+    "本音",
+    "ブレーキ",
+    "残るか",
+    "広がるか",
+    "しやすい",
+    "かもしれ",
+    "なのかも",
+)
+
 
 def has_surface_level_phrase(text: str) -> bool:
     return any(phrase in text for phrase in SURFACE_LEVEL_PHRASES)
+
+
+def extract_checklist_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip().startswith("✅")]
+
+
+def has_interpretive_checklist_line(text: str) -> bool:
+    return any(
+        phrase in line
+        for line in extract_checklist_lines(text)
+        for phrase in CHECKLIST_OPINION_PHRASES
+    )
 
 
 def setup_logging() -> None:
@@ -693,6 +725,13 @@ def generate_ai_sections(
 - 絵文字は少なめ。毎行入れない。使える絵文字: 😺🐻🐻‍❄️🥰✅🌈🌸🚨。
 - 最後は必ず「投資家Fより💌」で締める。
 
+【チェックリストのルール】
+- ✅の3行はニュースのピックアップ事実だけを書く。
+- ✅には、固有名詞、数字、日付、時刻、発表内容、上昇・下落など、確認できる事実だけを入れる。
+- ✅には、Fの見方、需給の読み、次に見る反応、読者への行動、比喩を入れない。
+- ✅で使ってよい文末は「上昇」「下落」「発表」「報道」「検討」「推移」「通過」「更新」などの事実表現だけ。
+- ✅で「〜を見る」「〜かを見る」「主役」「資金」「需給」「買い手」「売り手」「本音」は使わない。
+
 【アクションのルール】
 - ニュースから、読者が相場を読むための手触りのある観察を入れる。
 - アクションは、観察、確認、メモ、前日との比較、時刻の確認、米金利・ドル円・GOLD・NASDAQの並びを見る、などにする。
@@ -711,6 +750,7 @@ def generate_ai_sections(
 数字は入力されたものを勝手に変えないでください。
 内容は投資助言ではなく、朝の観察メモとして書いてください。
 主要トピックは必ず3つだけにしてください。
+主要トピック3つは、必ずニュースや相場データの事実ピックアップだけにしてください。
 重要指標は、入力された「重要指標候補」から選んでください。取得できていない指標名や時刻を作らないでください。
 全体は短く、Slackで一目で読める長さにしてください。
 各チェックリスト行は1行だけ、長くても60字前後にしてください。長い解説や段落は禁止です。
@@ -730,10 +770,12 @@ def generate_ai_sections(
 冒頭1〜2行にも、必ず固有名詞か数字を2つ以上入れる。
 値動きの感想ではなく、「米金利が上がったからドル円が反応」「GOLDが残ったから株の買いが鈍い」のように因果で書く。
 「荒れてますね」「注意深く見守る」「資金が逃げる先」のような軽い実況で始めない。
-✅固有名詞・数字 + 需給の主体 + 次に見る反応を1行で入れる
-✅固有名詞・数字 + 需給の主体 + 次に見る反応を1行で入れる
-✅固有名詞・数字 + 需給の主体 + 次に見る反応を1行で入れる
+✅ニュースや相場データから拾った事実だけを1行で入れる
+✅ニュースや相場データから拾った事実だけを1行で入れる
+✅ニュースや相場データから拾った事実だけを1行で入れる
 ※チェック行で「主要トピック1」「トピック2」のような番号ラベルは使わない。
+※チェック行では「〜を見る」「〜かを見る」「主役」「資金」「需給」「買い手」「売り手」を使わない。
+※Fの見方や需給の読みは、チェック行ではなく最後の2〜3行にだけ書く。
 
 今夜の重要指標
 時刻  国旗 指標名
@@ -769,12 +811,14 @@ def generate_ai_sections(
     text = clean_forbidden_phrases(text)
     text = remove_opening_greeting(text)
 
-    if has_surface_level_phrase(text):
+    if has_surface_level_phrase(text) or has_interpretive_checklist_line(text):
         retry_input = (
             user_input
             + "\n\n前回の出力は表面的でした。"
             + " `資金が逃げる先` `資金が残った` `数字より` `市場全体` のような抽象語を使わず、"
-            + "固有名詞・数字・需給の主体・次に見る反応まで入れて、同じ形式で書き直してください。"
+            + "チェック行の✅はニュースのピックアップ事実だけにしてください。"
+            + " ✅では `〜を見る` `主役` `資金` `需給` `買い手` `売り手` を使わず、"
+            + "Fの見方は最後の2〜3行にだけ分けて、同じ形式で書き直してください。"
         )
         response = client.responses.create(
             model=settings["openai_model"],
