@@ -46,6 +46,7 @@
 | 朝投稿の注目ニュース箇条書き化 | 完了 |
 | 昼・夕タイトルのランダム化 | 完了 |
 | Codex VPS移行調査 / 手順書 / 自動セットアップ案 | 完了 |
+| メルカリ割安候補検出MVP | ローカルサンプル実行まで完了 |
 | GitHub push | 完了 |
 
 ## 現在のVPS構成
@@ -175,6 +176,7 @@ NASDAQの買い手が一度ブレーキを踏みやすい朝です🐻
 - [outputs/CODEX_VPS_MIGRATION_REPORT.md](outputs/CODEX_VPS_MIGRATION_REPORT.md): CodexをVPS中心運用へ移すための現状分析と手順書
 - [outputs/setup_codex_vps_host.sh](outputs/setup_codex_vps_host.sh): VPS側のパッケージ、GitHub clone、Python venv、cron準備を行うセットアップ補助スクリプト
 - [outputs/cron_vps_template.txt](outputs/cron_vps_template.txt): VPS用cronテンプレート
+- [outputs/mercari_deal_finder/](outputs/mercari_deal_finder/): メルカリの割安候補をCSV保存し、条件一致時にSlack通知するMVP
 
 ## SocialDog朝昼夕下書き
 

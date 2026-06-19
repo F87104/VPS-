@@ -6,8 +6,14 @@ work/
 
 # Logs and runtime state
 logs/
+!outputs/mercari_deal_finder/logs/
+!outputs/mercari_deal_finder/logs/.gitkeep
 *.log
 substack_like_follow_state.json
+outputs/mercari_deal_finder/data/*.csv
+outputs/mercari_deal_finder/logs/*.log
+outputs/mercari_deal_finder/logs/*.html
+outputs/mercari_deal_finder/logs/*.png
 
 # Python cache
 __pycache__/

@@ -1,0 +1,77 @@
+{
+  "keywords": [
+    "anuans",
+    "CELFORD",
+    "FRAY I.D",
+    "SNIDEL",
+    "MONCLER レディース",
+    "Tiffany ネックレス",
+    "Apple Watch",
+    "iPad Pro",
+    "Switch ソフト"
+  ],
+  "min_discount_rate": 0.2,
+  "min_score": 70,
+  "max_current_items_per_keyword": 20,
+  "max_sold_items_per_keyword": 40,
+  "min_sold_samples": 5,
+  "max_detail_pages_per_keyword": 8,
+  "fetch_detail_pages": true,
+  "headless": true,
+  "random_wait_seconds": {
+    "min": 5,
+    "max": 12
+  },
+  "page_timeout_ms": 45000,
+  "slack_webhook_url": "",
+  "slack_notify": true,
+  "shipping_included_words": [
+    "送料込み",
+    "送料 出品者負担",
+    "出品者負担"
+  ],
+  "preferred_conditions": [
+    "新品、未使用",
+    "未使用に近い",
+    "目立った傷や汚れなし"
+  ],
+  "bonus_words": [
+    "正規品",
+    "タグ",
+    "付属品",
+    "箱",
+    "保証書",
+    "レシート",
+    "ギャランティ",
+    "鑑定済み",
+    "未使用",
+    "美品"
+  ],
+  "warning_words": [
+    "難あり",
+    "ジャンク",
+    "破れ",
+    "汚れ",
+    "偽物",
+    "コピー",
+    "並行輸入",
+    "海外製",
+    "ノベルティ",
+    "社外品",
+    "互換品"
+  ],
+  "exclude_words": [
+    "偽物",
+    "コピー",
+    "レプリカ",
+    "ノベルティ",
+    "ジャンク",
+    "難あり"
+  ],
+  "high_risk_brand_words": [
+    "MONCLER",
+    "モンクレール",
+    "Tiffany",
+    "ティファニー"
+  ]
+}
