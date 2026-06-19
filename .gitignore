@@ -11,6 +11,7 @@ logs/
 *.log
 substack_like_follow_state.json
 outputs/mercari_deal_finder/data/*.csv
+outputs/mercari_deal_finder/data/*.md
 outputs/mercari_deal_finder/logs/*.log
 outputs/mercari_deal_finder/logs/*.html
 outputs/mercari_deal_finder/logs/*.png

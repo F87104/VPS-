@@ -854,6 +854,12 @@ def csv_path_for_today() -> Path:
     return DATA_DIR / f"mercari_deals_{today}.csv"
 
 
+def markdown_path_for_today() -> Path:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    today = datetime.now(JST).strftime("%Y%m%d")
+    return DATA_DIR / f"mercari_deals_{today}.md"
+
+
 def save_csv(deals: list[Deal]) -> Path:
     path = csv_path_for_today()
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
@@ -862,6 +868,53 @@ def save_csv(deals: list[Deal]) -> Path:
         for deal in deals:
             writer.writerow(deal.to_csv_row())
     return path
+
+
+def save_markdown(deals: list[Deal], notify_deals: list[Deal]) -> Path:
+    path = markdown_path_for_today()
+    now = datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
+    lines = [
+        "# メルカリ割安候補",
+        "",
+        f"- 作成時刻: {now}",
+        f"- 候補数: {len(deals)}",
+        f"- Slack通知条件候補: {len(notify_deals)}",
+        "",
+    ]
+
+    if notify_deals:
+        lines.extend(["## Slack通知条件候補", ""])
+        for index, deal in enumerate(notify_deals, start=1):
+            lines.extend(markdown_deal_lines(index, deal))
+
+    lines.extend(["## 全候補", ""])
+    if not deals:
+        lines.append("候補はありませんでした。")
+    for index, deal in enumerate(deals, start=1):
+        lines.extend(markdown_deal_lines(index, deal))
+
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def markdown_deal_lines(index: int, deal: Deal) -> list[str]:
+    warning = ", ".join(deal.warning_words) if deal.warning_words else "なし"
+    condition = deal.condition or "未取得"
+    shipping = deal.shipping or "未取得"
+    return [
+        f"### {index}. {deal.keyword}",
+        "",
+        f"- 商品名: {deal.title}",
+        f"- 価格: {deal.current_price:,}円",
+        f"- 相場中央値: {deal.median_price:,}円",
+        f"- 割安率: {deal.discount_rate:.1%}",
+        f"- スコア: {deal.score}",
+        f"- 状態: {condition}",
+        f"- 送料: {shipping}",
+        f"- 警告: {warning}",
+        f"- 商品リンク: [メルカリで開く]({deal.url})",
+        "",
+    ]
 
 
 def slack_message_for_deals(deals: list[Deal]) -> str:
@@ -1050,7 +1103,9 @@ def main() -> int:
     csv_path = save_csv(deals)
 
     notify_deals = [deal for deal in deals if deal_passes_notification(deal, config)]
+    markdown_path = save_markdown(deals, notify_deals)
     print(f"CSV saved: {csv_path}")
+    print(f"Markdown saved: {markdown_path}")
     print(f"Deals: {len(deals)} / Slack candidates: {len(notify_deals)}")
 
     if notify_deals and config.get("slack_notify", True) and not args.dry_run:

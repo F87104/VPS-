@@ -20,7 +20,8 @@ outputs/mercari_deal_finder/
 ├── requirements.txt
 ├── run_mercari_deal_finder.sh
 ├── data/
-│   └── mercari_deals_YYYYMMDD.csv
+│   ├── mercari_deals_YYYYMMDD.csv
+│   └── mercari_deals_YYYYMMDD.md
 └── logs/
     └── app.log
 ```
@@ -52,6 +53,7 @@ python -m playwright install chromium
 - `keyword_exclude_words`: キーワードごとの除外語。例: Apple Watchのバンド、ケース、充電ケーブルなど
 
 `Apple Watch` はアクセサリーが大量に混ざるため、初期設定でバンド、ケース、フィルム、充電、ケーブル、ループ、空箱などを除外しています。
+`Tiffany` と `ヴァンクリーフ` は偽物リスクが高いため、高リスクブランドとして警告を出します。
 
 Webhookをファイルに書きたくない場合:
 
@@ -73,6 +75,7 @@ python mercari_deal_finder.py --sample --dry-run
 
 ```text
 CSV saved: data/mercari_deals_YYYYMMDD.csv
+Markdown saved: data/mercari_deals_YYYYMMDD.md
 ```
 
 のように表示されます。
@@ -119,6 +122,8 @@ python mercari_deal_finder.py --keyword "Apple Watch" --dry-run
 - 商品URL
 - 警告ワード
 - 仕入れ候補スコア
+
+Markdown出力には、商品名、価格、割安率、警告、商品リンクをまとめて表示します。
 
 ## cron設定例
 
