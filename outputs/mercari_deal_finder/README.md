@@ -2,6 +2,8 @@
 
 指定キーワードでメルカリの公開検索ページを確認し、売り切れ相場の中央値より安い出品をCSVに保存するMVPです。条件に合う候補があればSlack通知もできます。
 
+相場中央値はブランド全体ではなく、商品名の比較語が近い売り切れ商品だけで計算します。たとえば `ヴァンクリーフ` 全体ではなく、`ペルレ`、`リング`、`アルハンブラ`、`ペンダント` などが近い売り切れ商品を使います。
+
 ## 注意
 
 - ログイン、購入、自動いいね、自動コメント、自動購入は行いません。
@@ -49,8 +51,10 @@ python -m playwright install chromium
 - `slack_webhook_url`: Slack Incoming Webhook URL。空の場合は環境変数 `SLACK_WEBHOOK_URL` を使います
 - `max_current_items_per_keyword`: 現在出品中の商品取得件数
 - `max_sold_items_per_keyword`: 売り切れ商品の相場取得件数
+- `min_comparable_sold_samples`: 商品名が近い売り切れ商品の最低件数。足りない場合は割安判定しません
 - `keyword_include_words`: キーワードごとの必須寄せワード。例: `iPad Pro` は `iPad Pro` を含む商品名に寄せる
 - `keyword_exclude_words`: キーワードごとの除外語。例: Apple Watchのバンド、ケース、充電ケーブルなど
+- `comparison_terms`: 商品別の相場比較に使う語。例: `ペルレ`、`リング`、`ワンピース`、`12.9` など
 
 `Apple Watch` はアクセサリーが大量に混ざるため、初期設定でバンド、ケース、フィルム、充電、ケーブル、ループ、空箱などを除外しています。
 `Tiffany` と `ヴァンクリーフ` は偽物リスクが高いため、高リスクブランドとして警告を出します。
@@ -114,6 +118,8 @@ python mercari_deal_finder.py --keyword "Apple Watch" --dry-run
 - 商品名
 - 現在価格
 - 相場中央値
+- 相場比較件数
+- 相場比較語
 - 割安率
 - 状態
 - 送料

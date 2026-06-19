@@ -17,6 +17,7 @@ import os
 import random
 import re
 import statistics
+import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -42,6 +43,8 @@ CSV_FIELDS = [
     "商品名",
     "現在価格",
     "相場中央値",
+    "相場比較件数",
+    "相場比較語",
     "割安率",
     "状態",
     "送料",
@@ -60,6 +63,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_current_items_per_keyword": 20,
     "max_sold_items_per_keyword": 40,
     "min_sold_samples": 5,
+    "min_comparable_sold_samples": 3,
+    "min_title_overlap_ratio": 0.34,
+    "max_required_comparison_terms": 2,
     "max_detail_pages_per_keyword": 8,
     "fetch_detail_pages": True,
     "headless": True,
@@ -75,6 +81,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "high_risk_brand_words": ["MONCLER", "モンクレール", "Tiffany", "ティファニー"],
     "keyword_include_words": {},
     "keyword_exclude_words": {},
+    "comparison_terms": {},
 }
 
 
@@ -100,6 +107,8 @@ class Deal:
     title: str
     current_price: int
     median_price: int
+    comparable_count: int
+    comparison_terms: list[str]
     discount_rate: float
     condition: str
     shipping: str
@@ -117,6 +126,8 @@ class Deal:
             "商品名": self.title,
             "現在価格": str(self.current_price),
             "相場中央値": str(self.median_price),
+            "相場比較件数": str(self.comparable_count),
+            "相場比較語": ", ".join(self.comparison_terms),
             "割安率": f"{self.discount_rate:.1%}",
             "状態": self.condition,
             "送料": self.shipping,
@@ -566,6 +577,144 @@ def filter_keyword_exclusions(
     return kept, removed
 
 
+def normalize_compare_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text or "").lower()
+    text = re.sub(r"[【】\[\]（）()♡★☆✨⭐︎■・,，/／|｜]+", " ", text)
+    return normalize_space(text)
+
+
+def comparison_terms_for_keyword(keyword: str, config: dict[str, Any]) -> list[str]:
+    rules = config.get("comparison_terms", {})
+    if not isinstance(rules, dict):
+        return []
+    keyword_lower = keyword.lower()
+    terms: list[str] = []
+    for rule_keyword, rule_terms in rules.items():
+        if not isinstance(rule_terms, list):
+            continue
+        rule_lower = str(rule_keyword).lower()
+        if rule_lower == keyword_lower or rule_lower in keyword_lower or keyword_lower in rule_lower:
+            terms.extend(str(term) for term in rule_terms)
+    return terms
+
+
+def configured_terms_in_title(title: str, keyword: str, config: dict[str, Any]) -> list[str]:
+    text = normalize_compare_text(title)
+    found: list[str] = []
+    for term in comparison_terms_for_keyword(keyword, config):
+        normalized = normalize_compare_text(term)
+        if normalized and normalized in text:
+            found.append(term)
+    return dedupe_preserve_order(found)
+
+
+def title_tokens(title: str, keyword: str, config: dict[str, Any]) -> set[str]:
+    text = normalize_compare_text(title)
+    stop_words = {
+        "美品",
+        "新品",
+        "未使用",
+        "送料込",
+        "送料無料",
+        "レディース",
+        "メンズ",
+        "サイズ",
+        "mercari",
+        "apple",
+        "nintendo",
+        "switch",
+        "ソフト",
+        "ゲーム",
+    }
+    for word in keyword_include_words(keyword, config):
+        normalized_word = normalize_compare_text(word)
+        stop_words.add(normalized_word)
+        stop_words.update(token for token in re.split(r"[\s　]+", normalized_word) if token)
+    for token in re.split(r"[\s　]+", normalize_compare_text(keyword)):
+        if token:
+            stop_words.add(token)
+
+    tokens = set()
+    for token in re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)?|[ぁ-んァ-ヶー一-龥0-9]{2,}", text):
+        token = normalize_compare_text(token)
+        if not token or token in stop_words:
+            continue
+        if token.isdigit():
+            continue
+        tokens.add(token)
+    return tokens
+
+
+def dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        key = normalize_compare_text(value)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result
+
+
+def inferred_comparison_terms(listing: Listing, keyword: str, config: dict[str, Any]) -> list[str]:
+    terms = configured_terms_in_title(listing.title, keyword, config)
+    text = normalize_compare_text(listing.title)
+
+    patterns = [
+        r"series\s*\d+",
+        r"\bse\b",
+        r"\bultra\b",
+        r"\d{2}(?:\.\d)?\s*(?:mm|インチ)",
+        r"\d{2,4}\s*gb",
+        r"第\s*\d+\s*世代",
+        r"wi-?fi",
+        r"gps",
+        r"セルラー",
+    ]
+    for pattern in patterns:
+        terms.extend(match.group(0) for match in re.finditer(pattern, text))
+
+    return dedupe_preserve_order(terms)
+
+
+def title_overlap_ratio(current: Listing, sold: Listing, keyword: str, config: dict[str, Any]) -> float:
+    current_tokens = title_tokens(current.title, keyword, config)
+    sold_tokens = title_tokens(sold.title, keyword, config)
+    if not current_tokens or not sold_tokens:
+        return 0.0
+    return len(current_tokens & sold_tokens) / len(current_tokens)
+
+
+def comparable_sold_listings(
+    listing: Listing,
+    sold_listings: list[Listing],
+    keyword: str,
+    config: dict[str, Any],
+) -> tuple[list[Listing], list[str]]:
+    terms = inferred_comparison_terms(listing, keyword, config)
+    normalized_terms = [normalize_compare_text(term) for term in terms]
+    min_overlap = float(config.get("min_title_overlap_ratio", 0.34))
+    comparable: list[Listing] = []
+
+    for sold in sold_listings:
+        sold_text = normalize_compare_text(sold.title)
+        matched_terms = [term for term in normalized_terms if term and term in sold_text]
+        required_terms = min(
+            len(normalized_terms),
+            int(config.get("max_required_comparison_terms", 2)),
+        )
+        term_ok = bool(terms) and len(matched_terms) >= max(1, required_terms)
+        overlap_ok = title_overlap_ratio(listing, sold, keyword, config) >= min_overlap
+
+        if terms and term_ok:
+            comparable.append(sold)
+        elif not terms and overlap_ok:
+            comparable.append(sold)
+
+    return comparable, terms
+
+
 def detect_blocked_page(html: str) -> bool:
     needles = [
         "私はロボットではありません",
@@ -614,7 +763,13 @@ def listed_within_24h(listed_at: str) -> bool:
     return datetime.now(timezone.utc) - parsed.astimezone(timezone.utc) <= timedelta(hours=24)
 
 
-def score_deal(listing: Listing, median_price: int, config: dict[str, Any]) -> Deal:
+def score_deal(
+    listing: Listing,
+    median_price: int,
+    config: dict[str, Any],
+    comparable_count: int,
+    comparison_terms: list[str],
+) -> Deal:
     search_text = "\n".join([listing.title, listing.description, listing.condition, listing.shipping])
     warning_words = text_contains_any(search_text, config.get("warning_words", []))
     exclude_words = text_contains_any(search_text, config.get("exclude_words", []))
@@ -653,6 +808,8 @@ def score_deal(listing: Listing, median_price: int, config: dict[str, Any]) -> D
         title=listing.title,
         current_price=listing.price,
         median_price=median_price,
+        comparable_count=comparable_count,
+        comparison_terms=comparison_terms,
         discount_rate=discount_rate,
         condition=listing.condition,
         shipping=listing.shipping,
@@ -907,6 +1064,8 @@ def markdown_deal_lines(index: int, deal: Deal) -> list[str]:
         f"- 商品名: {deal.title}",
         f"- 価格: {deal.current_price:,}円",
         f"- 相場中央値: {deal.median_price:,}円",
+        f"- 相場比較件数: {deal.comparable_count}",
+        f"- 相場比較語: {', '.join(deal.comparison_terms) or '未取得'}",
         f"- 割安率: {deal.discount_rate:.1%}",
         f"- スコア: {deal.score}",
         f"- 状態: {condition}",
@@ -934,6 +1093,8 @@ def slack_message_for_deals(deals: list[Deal]) -> str:
                     f"商品名：{deal.title}",
                     f"価格：{deal.current_price:,}円",
                     f"相場中央値：{deal.median_price:,}円",
+                    f"相場比較件数：{deal.comparable_count}",
+                    f"相場比較語：{', '.join(deal.comparison_terms) or '未取得'}",
                     f"割安率：{deal.discount_rate:.1%}",
                     f"状態：{deal.condition or '未取得'}",
                     f"URL：{deal.url}",
@@ -1027,11 +1188,6 @@ async def analyze_keyword(
             logging.warning("Skip keyword=%s: sold samples=%s", keyword, len(sold_listings))
             return []
 
-        median = median_price(sold_listings)
-        if not median:
-            logging.warning("Skip keyword=%s: median not available", keyword)
-            return []
-
         if fetcher and config.get("fetch_detail_pages", True):
             detail_limit = int(config.get("max_detail_pages_per_keyword", 8))
             enriched: list[Listing] = []
@@ -1039,14 +1195,53 @@ async def analyze_keyword(
                 enriched.append(await fetcher.enrich_listing(listing))
             current_listings = enriched + current_listings[detail_limit:]
 
-        deals = [score_deal(listing, median, config) for listing in current_listings]
+        min_comparable_samples = int(config.get("min_comparable_sold_samples", 3))
+        deals: list[Deal] = []
+        skipped_no_comparable = 0
+        for listing in current_listings:
+            comparable_sold, comparison_terms = comparable_sold_listings(
+                listing,
+                sold_listings,
+                keyword,
+                config,
+            )
+            if len(comparable_sold) < min_comparable_samples:
+                skipped_no_comparable += 1
+                logging.info(
+                    "Skip listing: comparable sold samples too few keyword=%s title=%s comparable=%s terms=%s",
+                    keyword,
+                    listing.title,
+                    len(comparable_sold),
+                    ",".join(comparison_terms),
+                )
+                continue
+
+            item_median = median_price(comparable_sold)
+            if not item_median:
+                skipped_no_comparable += 1
+                continue
+            deals.append(
+                score_deal(
+                    listing,
+                    item_median,
+                    config,
+                    comparable_count=len(comparable_sold),
+                    comparison_terms=comparison_terms,
+                )
+            )
+
         qualified = [
             deal
             for deal in deals
             if deal.discount_rate >= float(config.get("min_discount_rate", 0.2))
         ]
         qualified.sort(key=lambda deal: (deal.score, deal.discount_rate), reverse=True)
-        logging.info("Keyword=%s median=%s qualified=%s", keyword, median, len(qualified))
+        logging.info(
+            "Keyword=%s qualified=%s skipped_no_comparable=%s",
+            keyword,
+            len(qualified),
+            skipped_no_comparable,
+        )
         return qualified
     except Exception as exc:
         logging.exception("Keyword failed: %s error=%s", keyword, exc)
