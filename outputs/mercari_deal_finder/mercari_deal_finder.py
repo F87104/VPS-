@@ -34,6 +34,7 @@ LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "app.log"
 JST = timezone(timedelta(hours=9), "JST")
 MERCARI_BASE_URL = "https://jp.mercari.com"
+BODY_TEXT_MARKER = "\n<!-- MERCARI_BODY_TEXT_START -->\n"
 
 
 CSV_FIELDS = [
@@ -72,6 +73,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "warning_words": ["難あり", "ジャンク", "破れ", "汚れ", "偽物", "コピー"],
     "exclude_words": ["偽物", "コピー", "レプリカ", "ノベルティ", "ジャンク", "難あり"],
     "high_risk_brand_words": ["MONCLER", "モンクレール", "Tiffany", "ティファニー"],
+    "keyword_exclude_words": {},
 }
 
 
@@ -184,10 +186,22 @@ def normalize_space(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
+def clean_title(title: str) -> str:
+    title = normalize_space(title)
+    return re.sub(r"のサムネイル$", "", title).strip()
+
+
 def normalize_url(url: str) -> str:
     if not url:
         return ""
     return urljoin(MERCARI_BASE_URL, url)
+
+
+def extract_body_text(html: str) -> str:
+    if BODY_TEXT_MARKER in html:
+        return html.split(BODY_TEXT_MARKER, 1)[1]
+    soup = BeautifulSoup(html, "html.parser")
+    return soup.get_text("\n", strip=True)
 
 
 def extract_item_id(url_or_id: str) -> str:
@@ -352,7 +366,7 @@ def parse_listings_from_dom(html: str, keyword: str, status: str) -> list[Listin
             title = img.get("alt") or ""
         if not title:
             title = re.sub(r"(¥|￥)\s*[0-9,]+", "", card_text).strip()
-        title = normalize_space(title)
+        title = clean_title(title)
         if not title:
             continue
 
@@ -367,6 +381,96 @@ def parse_listings_from_dom(html: str, keyword: str, status: str) -> list[Listin
                 image_count=1 if img else 0,
             )
         )
+    return listings
+
+
+def title_matches_keyword(title: str, keyword: str) -> bool:
+    title_lower = title.lower()
+    tokens = [token for token in re.split(r"[\s　]+", keyword.lower()) if len(token) >= 2]
+    return not tokens or any(token in title_lower for token in tokens)
+
+
+def looks_like_listing_title(title: str, keyword: str) -> bool:
+    title = clean_title(title)
+    if len(title) < 4 or len(title) > 180:
+        return False
+    if re.fullmatch(r"[¥￥]?\s*[0-9,]+", title):
+        return False
+    ui_words = [
+        "メルカリ",
+        "ログイン",
+        "会員登録",
+        "検索",
+        "カテゴリー",
+        "ブランド",
+        "価格",
+        "商品の状態",
+        "配送料",
+        "販売状況",
+        "新しい順",
+        "おすすめ順",
+        "保存した検索条件",
+    ]
+    if any(word in title for word in ui_words):
+        return False
+    return title_matches_keyword(title, keyword)
+
+
+def parse_text_price_title(line: str) -> tuple[int, str] | None:
+    match = re.match(r"^(?:現在|売り切れ|SOLD)?\s*[¥￥]\s*([0-9][0-9,]{2,})\s+(.+)$", line)
+    if not match:
+        return None
+    price = parse_price(match.group(1))
+    title = clean_title(match.group(2))
+    if price is None or not title:
+        return None
+    return price, title
+
+
+def parse_listings_from_text(html: str, keyword: str, status: str, search_url: str) -> list[Listing]:
+    body_text = extract_body_text(html)
+    lines = [normalize_space(line) for line in body_text.splitlines()]
+    lines = [line for line in lines if line]
+    listings: list[Listing] = []
+    seen: set[tuple[str, int]] = set()
+
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        price: int | None = None
+        title = ""
+
+        parsed_inline = parse_text_price_title(line)
+        if parsed_inline:
+            price, title = parsed_inline
+        elif line in {"現在", "売り切れ", "SOLD"} and index + 2 < len(lines):
+            price = parse_price(lines[index + 1])
+            title = lines[index + 2]
+            index += 2
+        elif ("¥" in line or "￥" in line) and index + 1 < len(lines):
+            price = parse_price(line)
+            title = lines[index + 1]
+            index += 1
+
+        index += 1
+        title = clean_title(title)
+        if price is None or not looks_like_listing_title(title, keyword):
+            continue
+
+        key = (title, price)
+        if key in seen:
+            continue
+        seen.add(key)
+        listings.append(
+            Listing(
+                keyword=keyword,
+                title=title[:160],
+                price=price,
+                url=f"{search_url}#text-{len(listings) + 1}",
+                status=status,
+            )
+        )
+
     return listings
 
 
@@ -390,8 +494,51 @@ def merge_listings(primary: list[Listing], fallback: list[Listing]) -> list[List
     return merged
 
 
+def keyword_exclude_words(keyword: str, config: dict[str, Any]) -> list[str]:
+    rules = config.get("keyword_exclude_words", {})
+    if not isinstance(rules, dict):
+        return []
+    keyword_lower = keyword.lower()
+    words: list[str] = []
+    for rule_keyword, rule_words in rules.items():
+        if not isinstance(rule_words, list):
+            continue
+        rule_lower = str(rule_keyword).lower()
+        if rule_lower == keyword_lower or rule_lower in keyword_lower or keyword_lower in rule_lower:
+            words.extend(str(word) for word in rule_words)
+    return words
+
+
+def filter_keyword_exclusions(
+    listings: list[Listing],
+    keyword: str,
+    config: dict[str, Any],
+) -> tuple[list[Listing], int]:
+    words = keyword_exclude_words(keyword, config)
+    if not words:
+        return listings, 0
+
+    kept: list[Listing] = []
+    removed = 0
+    for listing in listings:
+        text = "\n".join([listing.title, listing.description])
+        if text_contains_any(text, words):
+            removed += 1
+            continue
+        kept.append(listing)
+    return kept, removed
+
+
 def detect_blocked_page(html: str) -> bool:
-    needles = ["captcha", "認証", "アクセスが集中", "しばらくしてから", "Access Denied"]
+    needles = [
+        "私はロボットではありません",
+        "reCAPTCHA で保護されています",
+        "アクセスが集中",
+        "しばらくしてからアクセス",
+        "Access Denied",
+        "Too Many Requests",
+        "Request blocked",
+    ]
     lower = html.lower()
     return any(needle.lower() in lower for needle in needles)
 
@@ -535,23 +682,54 @@ class MercariFetcher:
                 await page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
                 pass
+            await page.wait_for_timeout(3000)
+            for _ in range(3):
+                await page.mouse.wheel(0, 900)
+                await page.wait_for_timeout(700)
             html = await page.content()
-            if detect_blocked_page(html):
+            try:
+                body_text = await page.locator("body").inner_text(timeout=5000)
+            except Exception:
+                body_text = ""
+            payload = html + BODY_TEXT_MARKER + body_text if body_text else html
+            if detect_blocked_page(payload):
                 raise MercariAccessError("Mercari returned an access check or blocked page")
-            return html
+            return payload
         finally:
             await page.context.close()
 
     async def fetch_search(self, keyword: str, status: str, limit: int) -> list[Listing]:
-        await self.polite_wait()
         url = self.search_url(keyword, status)
-        logging.info("Fetching search keyword=%s status=%s url=%s", keyword, status, url)
-        html = await self.fetch_html(url)
-        json_listings = parse_listings_from_json(html, keyword, status)
-        dom_listings = parse_listings_from_dom(html, keyword, status)
-        listings = merge_listings(json_listings, dom_listings)
-        logging.info("Found %s listings for keyword=%s status=%s", len(listings), keyword, status)
-        return listings[:limit]
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            await self.polite_wait()
+            logging.info(
+                "Fetching search keyword=%s status=%s attempt=%s url=%s",
+                keyword,
+                status,
+                attempt,
+                url,
+            )
+            html = await self.fetch_html(url)
+            json_listings = parse_listings_from_json(html, keyword, status)
+            dom_listings = parse_listings_from_dom(html, keyword, status)
+            text_listings = parse_listings_from_text(html, keyword, status, url)
+            listings = merge_listings(merge_listings(json_listings, dom_listings), text_listings)
+            listings, keyword_excluded = filter_keyword_exclusions(listings, keyword, self.config)
+            logging.info(
+                "Found %s listings for keyword=%s status=%s json=%s dom=%s text=%s keyword_excluded=%s",
+                len(listings),
+                keyword,
+                status,
+                len(json_listings),
+                len(dom_listings),
+                len(text_listings),
+                keyword_excluded,
+            )
+            if listings or attempt == max_attempts:
+                return listings[:limit]
+            logging.warning("No listings found; retry keyword=%s status=%s", keyword, status)
+        return []
 
     async def enrich_listing(self, listing: Listing) -> Listing:
         await self.polite_wait()

@@ -15,7 +15,7 @@
   "max_current_items_per_keyword": 20,
   "max_sold_items_per_keyword": 40,
   "min_sold_samples": 5,
-  "max_detail_pages_per_keyword": 8,
+  "max_detail_pages_per_keyword": 4,
   "fetch_detail_pages": true,
   "headless": true,
   "random_wait_seconds": {
@@ -73,5 +73,66 @@
     "モンクレール",
     "Tiffany",
     "ティファニー"
-  ]
+  ],
+  "keyword_exclude_words": {
+    "Apple Watch": [
+      "バンド",
+      "ベルト",
+      "ケース",
+      "カバー",
+      "フィルム",
+      "保護",
+      "充電",
+      "充電器",
+      "ケーブル",
+      "スタンド",
+      "ストラップ",
+      "ループ",
+      "スポーツループ",
+      "Band",
+      "Sport Band",
+      "Solo Loop",
+      "スマートウォッチ",
+      "まとめ商品",
+      "リクエスト",
+      "空箱",
+      "箱のみ",
+      "用",
+      "Close Your Rings Day",
+      "AirPro",
+      "互換品"
+    ],
+    "iPad Pro": [
+      "ケース",
+      "カバー",
+      "フィルム",
+      "保護",
+      "キーボード",
+      "Keyboard",
+      "Apple Pencil",
+      "ペンシル",
+      "スタンド",
+      "充電器"
+    ],
+    "Tiffany ネックレス": [
+      "空箱",
+      "箱のみ",
+      "紙袋",
+      "ショッパー",
+      "巾着"
+    ],
+    "MONCLER レディース": [
+      "ハンガー",
+      "紙袋",
+      "ワッペン"
+    ],
+    "Switch ソフト": [
+      "本体",
+      "ケースのみ",
+      "コントローラー",
+      "Joy-Con",
+      "ジョイコン",
+      "ドック"
+    ]
+  }
 }

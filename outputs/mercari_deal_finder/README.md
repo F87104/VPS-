@@ -9,6 +9,7 @@
 - 過剰アクセスしないよう、キーワードごとにランダム待機を入れています。
 - CAPTCHA、ログイン要求、ブロック画面が出た場合は無理に突破しません。
 - ブランド品は偽物リスクがあるため、警告ワードや付属品ワードを表示します。最終判断は人が行います。
+- 2026-06-19に `Apple Watch` の実検索で、CSV保存とノイズ除外を確認済みです。
 
 ## フォルダ構成
 
@@ -47,6 +48,9 @@ python -m playwright install chromium
 - `slack_webhook_url`: Slack Incoming Webhook URL。空の場合は環境変数 `SLACK_WEBHOOK_URL` を使います
 - `max_current_items_per_keyword`: 現在出品中の商品取得件数
 - `max_sold_items_per_keyword`: 売り切れ商品の相場取得件数
+- `keyword_exclude_words`: キーワードごとの除外語。例: Apple Watchのバンド、ケース、充電ケーブルなど
+
+`Apple Watch` はアクセサリーが大量に混ざるため、初期設定でバンド、ケース、フィルム、充電、ケーブル、ループ、空箱などを除外しています。
 
 Webhookをファイルに書きたくない場合:
 
@@ -131,4 +135,3 @@ VPSへ置く場合:
 mkdir -p /home/ubuntu/f_tools/mercari_deal_finder
 cp -a outputs/mercari_deal_finder/. /home/ubuntu/f_tools/mercari_deal_finder/
 ```
-
