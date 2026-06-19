@@ -48,6 +48,7 @@ python -m playwright install chromium
 - `slack_webhook_url`: Slack Incoming Webhook URL。空の場合は環境変数 `SLACK_WEBHOOK_URL` を使います
 - `max_current_items_per_keyword`: 現在出品中の商品取得件数
 - `max_sold_items_per_keyword`: 売り切れ商品の相場取得件数
+- `keyword_include_words`: キーワードごとの必須寄せワード。例: `iPad Pro` は `iPad Pro` を含む商品名に寄せる
 - `keyword_exclude_words`: キーワードごとの除外語。例: Apple Watchのバンド、ケース、充電ケーブルなど
 
 `Apple Watch` はアクセサリーが大量に混ざるため、初期設定でバンド、ケース、フィルム、充電、ケーブル、ループ、空箱などを除外しています。

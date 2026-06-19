@@ -73,6 +73,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "warning_words": ["難あり", "ジャンク", "破れ", "汚れ", "偽物", "コピー"],
     "exclude_words": ["偽物", "コピー", "レプリカ", "ノベルティ", "ジャンク", "難あり"],
     "high_risk_brand_words": ["MONCLER", "モンクレール", "Tiffany", "ティファニー"],
+    "keyword_include_words": {},
     "keyword_exclude_words": {},
 }
 
@@ -265,7 +266,7 @@ def first_int(obj: dict[str, Any], keys: list[str]) -> int | None:
 
 
 def listing_from_json_obj(obj: dict[str, Any], keyword: str, status: str) -> Listing | None:
-    title = first_string(obj, ["name", "title", "itemName", "item_name"])
+    title = clean_title(first_string(obj, ["name", "title", "itemName", "item_name"]))
     price = first_int(obj, ["price", "itemPrice", "item_price", "priceValue", "value"])
     raw_url = first_string(obj, ["url", "itemUrl", "item_url", "link"])
     raw_id = first_string(obj, ["id", "itemId", "item_id", "productId"])
@@ -509,6 +510,42 @@ def keyword_exclude_words(keyword: str, config: dict[str, Any]) -> list[str]:
     return words
 
 
+def keyword_include_words(keyword: str, config: dict[str, Any]) -> list[str]:
+    rules = config.get("keyword_include_words", {})
+    if not isinstance(rules, dict):
+        return []
+    keyword_lower = keyword.lower()
+    words: list[str] = []
+    for rule_keyword, rule_words in rules.items():
+        if not isinstance(rule_words, list):
+            continue
+        rule_lower = str(rule_keyword).lower()
+        if rule_lower == keyword_lower or rule_lower in keyword_lower or keyword_lower in rule_lower:
+            words.extend(str(word) for word in rule_words)
+    return words
+
+
+def filter_keyword_inclusions(
+    listings: list[Listing],
+    keyword: str,
+    config: dict[str, Any],
+) -> tuple[list[Listing], int]:
+    words = keyword_include_words(keyword, config)
+    if not words:
+        kept = [listing for listing in listings if title_matches_keyword(listing.title, keyword)]
+        return kept, len(listings) - len(kept)
+
+    kept: list[Listing] = []
+    removed = 0
+    for listing in listings:
+        title_lower = listing.title.lower()
+        if any(word.lower() in title_lower for word in words):
+            kept.append(listing)
+            continue
+        removed += 1
+    return kept, removed
+
+
 def filter_keyword_exclusions(
     listings: list[Listing],
     keyword: str,
@@ -715,15 +752,17 @@ class MercariFetcher:
             dom_listings = parse_listings_from_dom(html, keyword, status)
             text_listings = parse_listings_from_text(html, keyword, status, url)
             listings = merge_listings(merge_listings(json_listings, dom_listings), text_listings)
+            listings, keyword_included = filter_keyword_inclusions(listings, keyword, self.config)
             listings, keyword_excluded = filter_keyword_exclusions(listings, keyword, self.config)
             logging.info(
-                "Found %s listings for keyword=%s status=%s json=%s dom=%s text=%s keyword_excluded=%s",
+                "Found %s listings for keyword=%s status=%s json=%s dom=%s text=%s keyword_include_removed=%s keyword_excluded=%s",
                 len(listings),
                 keyword,
                 status,
                 len(json_listings),
                 len(dom_listings),
                 len(text_listings),
+                keyword_included,
                 keyword_excluded,
             )
             if listings or attempt == max_attempts:
