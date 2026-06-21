@@ -61,10 +61,12 @@ status=$?
 
 cat "$LAST_LOG" >> "$MASTER_LOG"
 
-"$PYTHON_BIN" "$NOTIFIER" \
-  --title "Xいいね・フォロー自動実行" \
-  --status "$status" \
-  --log "$LAST_LOG" \
-  >> "$MASTER_LOG" 2>&1 || true
+if [ "$status" -ne 0 ] || grep -Eiq "storage_state=missing|\\[ERROR\\]|Traceback|Fatal error|Timeout|ログインが必要|headless実行中にXログイン|storage_stateが見つかりません|No such file or directory" "$LAST_LOG"; then
+  "$PYTHON_BIN" "$NOTIFIER" \
+    --title "Xいいね・フォロー自動実行 異常検知" \
+    --status "1" \
+    --log "$LAST_LOG" \
+    >> "$MASTER_LOG" 2>&1 || true
+fi
 
 exit "$status"

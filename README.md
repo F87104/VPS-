@@ -25,16 +25,17 @@
 | Substack終了ログのSlack通知 | 完了 |
 | Xいいね・フォロー補助ツールの件数上限追加 | 完了 |
 | X補助ツールのVPS配置 / Playwright導入 | 完了 |
-| X終了ログのSlack通知 | 完了 |
+| X終了ログのSlack通知 | 通常通知停止 / 異常時のみ通知 |
 | XのVPSログイン状態 | 完了 |
 | Xのcron自動起動 | 7:00 / 12:30 / 19:00に設定済み |
 | noteスキ・フォロー補助ツール作成 | 完了 |
 | note補助ツールのVPS配置 | 完了 |
-| note終了ログのSlack通知 | 完了 |
+| note終了ログのSlack通知 | 通常通知停止 / 異常時のみ通知 |
 | noteのVPSログイン状態 | 完了 |
 | noteのスキ実行確認 | 完了 |
 | noteのフォロー実行確認 | 完了 |
 | noteのcron自動起動 | 8:00 / 13:00 / 20:00に設定済み |
+| X/note自動実行の監視 | 毎時20分に異常だけSlack通知 |
 | X / Substack / noteの件数上限増量 | X・noteを2026-06-21に再増量 |
 | SocialDog下書き保存テスト | 完了 |
 | 投資家FのX文体研究 | 完了 |
@@ -164,10 +165,11 @@ NASDAQの買い手が一度ブレーキを踏みやすい朝です🐻
 - [outputs/run_substack_daily_vps.sh](outputs/run_substack_daily_vps.sh): VPSで毎日12:00に実行するためのラッパースクリプト
 - [outputs/notify_slack_summary.py](outputs/notify_slack_summary.py): 終了ログをSlackへ通知するスクリプト
 - [outputs/auto_like_v11_2_1_limited.py](outputs/auto_like_v11_2_1_limited.py): 件数上限つきにしたXいいね・フォロー補助ツール
-- [outputs/run_x_daily_vps.sh](outputs/run_x_daily_vps.sh): VPSでX補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
+- [outputs/run_x_daily_vps.sh](outputs/run_x_daily_vps.sh): VPSでX補助ツールを実行し、異常時だけSlackへ通知するラッパースクリプト
 - [outputs/x_buzz_finder/](outputs/x_buzz_finder/): 伸びているX投稿を探し、返信候補をCSV/Markdown/Slackへ出す検索ツール
 - [outputs/note_suki_follow_safe.py](outputs/note_suki_follow_safe.py): noteのスキ・フォロー補助ツール
-- [outputs/run_note_daily_vps.sh](outputs/run_note_daily_vps.sh): VPSでnote補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
+- [outputs/run_note_daily_vps.sh](outputs/run_note_daily_vps.sh): VPSでnote補助ツールを実行し、異常時だけSlackへ通知するラッパースクリプト
+- [outputs/monitor_social_jobs.py](outputs/monitor_social_jobs.py): X/note自動実行のログ鮮度・終了ステータス・ログイン切れを監視し、異常時だけSlack通知するスクリプト
 - [outputs/socialdog_draft_safe.py](outputs/socialdog_draft_safe.py): SocialDogへ投稿本文を入れて下書き保存するテスト用スクリプト
 - [outputs/socialdog_generate_daily_posts.py](outputs/socialdog_generate_daily_posts.py): 相場・ニュース・急上昇候補から朝昼夕3投稿を生成するスクリプト
 - [outputs/run_socialdog_daily_drafts_vps.sh](outputs/run_socialdog_daily_drafts_vps.sh): VPSで毎朝5:40にSocialDog下書き保存を実行するラッパースクリプト
@@ -381,7 +383,7 @@ VPSで確認済み:
 - スクリプトの構文チェック: OK
 - Playwright / Chromium起動: OK
 - X未ログイン時の停止: OK
-- Slack終了通知: OK
+- Slack異常通知: OK
 
 ログイン状態:
 
@@ -399,6 +401,8 @@ cron:
 ```
 
 Xは朝7:00、昼12:30、夕19:00の3回稼働です。Substackの12:00実行とは30分ずらしています。
+
+通常のいいね・フォロー結果はSlackへ通知しません。ログイン切れ、終了エラー、ログ内の異常文言が出たときだけSlackへ通知します。
 
 現在の1回あたり上限:
 
@@ -486,7 +490,7 @@ VPSで確認済み:
 - noteログイン状態のVPS移行: OK
 - スキ1件の実行: OK
 - フォロー1件の実行: OK
-- Slack終了通知: OK
+- Slack異常通知: OK
 
 ログイン状態:
 
@@ -505,6 +509,8 @@ cron:
 
 noteは朝8:00、昼13:00、夜20:00の3回稼働です。Xの稼働時刻とは少しずらしています。
 
+通常のスキ・フォロー結果はSlackへ通知しません。ログイン切れ、終了エラー、ログ内の異常文言が出たときだけSlackへ通知します。
+
 現在の1回あたり上限:
 
 - 合計アクション: 15
@@ -516,6 +522,31 @@ noteは朝8:00、昼13:00、夜20:00の3回稼働です。Xの稼働時刻とは
 ```bash
 NOTE_MAX_ACTIONS=0 NOTE_MAX_LIKES=0 NOTE_MAX_FOLLOWS=0 /bin/bash /home/ubuntu/f_tools/run_note_daily_vps.sh
 ```
+
+## X/note監視
+
+Xとnoteの通常結果Slack通知は止めています。代わりに、監視スクリプトがログの鮮度、終了ステータス、ログイン状態ファイル、エラー文言を確認します。
+
+VPS上の配置:
+
+```text
+/home/ubuntu/f_tools/monitor_social_jobs.py
+```
+
+監視cron:
+
+```cron
+20 * * * * /usr/bin/python3 /home/ubuntu/f_tools/monitor_social_jobs.py >> /home/ubuntu/f_tools/logs/social_jobs_monitor_cron.log 2>&1
+```
+
+Slackへ通知する条件:
+
+- X/noteのログイン状態ファイルがない
+- 最新ログが14時間以上更新されていない
+- 最新ログに `exit status=0` がない
+- 最新ログに `ERROR`、`Traceback`、`Timeout`、ログイン切れらしい文言がある
+
+同じ異常は何度もSlackへ流さず、状態が変わったときだけ通知します。
 
 ## 注意
 
