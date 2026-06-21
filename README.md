@@ -45,6 +45,7 @@
 | SocialDog投稿の投資助言・ポジション表現除外 | 完了 |
 | 朝投稿の注目ニュース箇条書き化 | 完了 |
 | 昼・夕タイトルのランダム化 | 完了 |
+| Xバズ返信候補検索ツール | MVP作成 |
 | Codex VPS移行調査 / 手順書 / 自動セットアップ案 | 完了 |
 | メルカリ割安候補検出MVP | Apple Watch実検索 / CSV保存 / ノイズ除外まで確認済み |
 | GitHub push | 完了 |
@@ -164,6 +165,7 @@ NASDAQの買い手が一度ブレーキを踏みやすい朝です🐻
 - [outputs/notify_slack_summary.py](outputs/notify_slack_summary.py): 終了ログをSlackへ通知するスクリプト
 - [outputs/auto_like_v11_2_1_limited.py](outputs/auto_like_v11_2_1_limited.py): 件数上限つきにしたXいいね・フォロー補助ツール
 - [outputs/run_x_daily_vps.sh](outputs/run_x_daily_vps.sh): VPSでX補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
+- [outputs/x_buzz_finder/](outputs/x_buzz_finder/): 伸びているX投稿を探し、返信候補をCSV/Markdown/Slackへ出す検索ツール
 - [outputs/note_suki_follow_safe.py](outputs/note_suki_follow_safe.py): noteのスキ・フォロー補助ツール
 - [outputs/run_note_daily_vps.sh](outputs/run_note_daily_vps.sh): VPSでnote補助ツールを実行し、終了ログをSlackへ通知するラッパースクリプト
 - [outputs/socialdog_draft_safe.py](outputs/socialdog_draft_safe.py): SocialDogへ投稿本文を入れて下書き保存するテスト用スクリプト
@@ -411,6 +413,50 @@ Xは朝7:00、昼12:30、夕19:00の3回稼働です。Substackの12:00実行と
 ```bash
 X_MAX_ACTIONS=0 X_MAX_LIKES=0 X_MAX_FOLLOWS=0 X_MAX_UNFOLLOWS=0 /bin/bash /home/ubuntu/f_tools/run_x_daily_vps.sh
 ```
+
+## Xバズ返信候補検索ツール
+
+X収益化に必要なインプレッションを伸ばすため、伸びている投稿を探して返信候補としてまとめるMVPを作成しました。
+
+このツールは候補を探すだけです。自動返信、いいね、フォローは行いません。
+
+VPS上の配置:
+
+```text
+/home/ubuntu/f_tools/x_buzz_finder/x_buzz_finder.py
+/home/ubuntu/f_tools/x_buzz_finder/config.json
+/home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh
+```
+
+できること:
+
+- X検索で伸びている投稿をカテゴリ別に探す
+- 返信数、リポスト数、いいね数、表示数を拾う
+- スコア順にCSVとMarkdownへ保存する
+- 返信の切り口と短い返信メモを出す
+- Slackへ候補リンクを通知する
+
+まずサンプル確認:
+
+```bash
+python3 outputs/x_buzz_finder/x_buzz_finder.py --sample --dry-run
+```
+
+VPSで実行:
+
+```bash
+/bin/bash /home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh
+```
+
+cron例:
+
+```cron
+30 6 * * * /bin/bash /home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh >> /home/ubuntu/f_tools/x_buzz_finder/logs/cron.log 2>&1
+45 11 * * * /bin/bash /home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh >> /home/ubuntu/f_tools/x_buzz_finder/logs/cron.log 2>&1
+15 18 * * * /bin/bash /home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh >> /home/ubuntu/f_tools/x_buzz_finder/logs/cron.log 2>&1
+```
+
+cronはまだ本番設定していません。Slack通知が増えるため、運用タイミングを決めてから入れる想定です。
 
 ## note補助ツール
 

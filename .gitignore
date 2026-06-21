@@ -15,6 +15,11 @@ outputs/mercari_deal_finder/data/*.md
 outputs/mercari_deal_finder/logs/*.log
 outputs/mercari_deal_finder/logs/*.html
 outputs/mercari_deal_finder/logs/*.png
+outputs/x_buzz_finder/data/*.csv
+outputs/x_buzz_finder/data/*.md
+outputs/x_buzz_finder/logs/*.log
+outputs/x_buzz_finder/logs/*.html
+outputs/x_buzz_finder/logs/*.png
 
 # Python cache
 __pycache__/
