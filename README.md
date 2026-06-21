@@ -35,7 +35,7 @@
 | noteのスキ実行確認 | 完了 |
 | noteのフォロー実行確認 | 完了 |
 | noteのcron自動起動 | 8:00 / 13:00 / 20:00に設定済み |
-| X / Substack / noteの件数上限増量 | 完了 |
+| X / Substack / noteの件数上限増量 | X・noteを2026-06-21に再増量 |
 | SocialDog下書き保存テスト | 完了 |
 | 投資家FのX文体研究 | 完了 |
 | SocialDog VPS仮想デスクトップログイン | 完了 |
@@ -367,11 +367,11 @@ VPSにはPlaywrightとChromiumを導入済みです。
   --timeline \
   --headless \
   --config /home/ubuntu/prometheus/config.ini \
-  --max-actions 18 \
-  --max-likes 15 \
-  --max-follows 3 \
+  --max-actions 24 \
+  --max-likes 20 \
+  --max-follows 4 \
   --max-unfollows 0 \
-  --max-runtime-minutes 45
+  --max-runtime-minutes 55
 ```
 
 VPSで確認済み:
@@ -400,11 +400,11 @@ Xは朝7:00、昼12:30、夕19:00の3回稼働です。Substackの12:00実行と
 
 現在の1回あたり上限:
 
-- 合計アクション: 18
-- いいね: 15
-- フォロー: 3
+- 合計アクション: 24
+- いいね: 20
+- フォロー: 4
 - アンフォロー: 0
-- 最大実行時間: 45分
+- 最大実行時間: 55分
 
 0件テスト:
 
@@ -461,9 +461,9 @@ noteは朝8:00、昼13:00、夜20:00の3回稼働です。Xの稼働時刻とは
 
 現在の1回あたり上限:
 
-- 合計アクション: 10
-- スキ: 8
-- フォロー: 2
+- 合計アクション: 15
+- スキ: 12
+- フォロー: 3
 
 0件テスト:
 
