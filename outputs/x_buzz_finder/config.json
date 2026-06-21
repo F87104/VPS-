@@ -1,40 +1,60 @@
 {
   "storage_state": "/home/ubuntu/prometheus/x_storage_state.json",
   "headless": true,
-  "max_posts_per_query": 12,
+  "max_posts_per_query": 8,
   "max_total_posts": 40,
   "max_scrolls": 3,
-  "min_likes": 300,
-  "min_reposts": 30,
-  "min_replies": 20,
-  "min_views": 20000,
+  "min_likes": 100,
+  "min_reposts": 10,
+  "min_replies": 5,
+  "min_views": 5000,
   "max_age_hours": 48,
   "slack_notify": true,
   "slack_webhook_url": "",
   "queries": [
     {
       "label": "相場・投資",
-      "query": "(投資 OR 株 OR 日経 OR 為替 OR ドル円 OR 米国株 OR GOLD OR ビットコイン) lang:ja -filter:replies min_faves:300",
+      "query": "投資",
       "reply_angle": "数字に反応している人の心理、資金の逃げ足、ニュースへの反応速度を見る"
     },
     {
+      "label": "ドル円・為替",
+      "query": "ドル円",
+      "reply_angle": "値動きそのものより、ニュースに反応した資金の向きを見る"
+    },
+    {
+      "label": "米国株・半導体",
+      "query": "米国株",
+      "reply_angle": "指数より、どの銘柄やテーマに資金が集まっているかを見る"
+    },
+    {
       "label": "AI・テック",
-      "query": "(AI OR ChatGPT OR 生成AI OR OpenAI OR NVIDIA OR 半導体) lang:ja -filter:replies min_faves:300",
+      "query": "AI",
       "reply_angle": "技術そのものより、仕事・収益・投資判断にどうつながるかを見る"
     },
     {
+      "label": "ChatGPT",
+      "query": "ChatGPT",
+      "reply_angle": "機能の派手さより、毎日の作業がどう短くなるかを見る"
+    },
+    {
       "label": "お金・働き方",
-      "query": "(副業 OR 年収 OR 転職 OR フリーランス OR 起業 OR 資産形成) lang:ja -filter:replies min_faves:300",
+      "query": "副業",
       "reply_angle": "再現性、行動の小ささ、読者が今日やれる整理に寄せる"
     },
     {
+      "label": "資産形成",
+      "query": "資産形成",
+      "reply_angle": "大きな話より、続けやすい習慣や見直しに寄せる"
+    },
+    {
       "label": "暮らし・共感",
-      "query": "(生活 OR 家計 OR 物価 OR 子育て OR 仕事 OR メンタル) lang:ja -filter:replies min_faves:500",
+      "query": "物価",
       "reply_angle": "説教にせず、読者が少し軽くなる見方を返す"
     },
     {
       "label": "急上昇拾い",
-      "query": "(話題 OR 炎上 OR 速報 OR 発表 OR 値上げ OR 改定) lang:ja -filter:replies min_faves:500",
+      "query": "速報",
       "reply_angle": "出来事の裏で、人の行動やお金の流れがどう変わるかを見る"
     }
   ],
@@ -43,8 +63,10 @@
     "現金配布",
     "無料配布",
     "LINE登録",
+    "返信先:",
     "必ず儲かる",
     "絶対稼げる",
+    "超低位株",
     "センシティブ",
     "誹謗中傷",
     "差別",

@@ -169,9 +169,13 @@ def metric_from_labels(labels: list[str], needles: list[str]) -> int:
         lower = label.lower()
         if not any(needle.lower() in lower for needle in needles):
             continue
+        parsed = metric_from_text(label, needles)
+        if parsed:
+            best = max(best, parsed)
+            continue
         numbers = re.findall(r"[0-9][0-9,.]*\s*(?:万|億|K|M|B|k|m|b)?", label)
-        for number in numbers:
-            best = max(best, parse_count(number))
+        if numbers:
+            best = max(best, parse_count(numbers[0]))
     return best
 
 
@@ -240,6 +244,8 @@ def should_keep(post: BuzzPost, config: dict[str, Any]) -> bool:
     if post.warnings:
         return False
     if not post.url or "/status/" not in post.url:
+        return False
+    if "返信先:" in post.text or "Replying to" in post.text:
         return False
     age = post_age_hours(post.posted_at)
     if age is not None and age > float(config.get("max_age_hours", 48)):
