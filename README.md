@@ -45,7 +45,7 @@
 | SocialDog投稿の投資助言・ポジション表現除外 | 完了 |
 | 朝投稿の注目ニュース箇条書き化 | 完了 |
 | 昼・夕タイトルのランダム化 | 完了 |
-| Xバズ返信候補検索ツール | MVP作成 |
+| Xバズ返信候補検索ツール | 6:30 / 11:45 / 18:15にSlack通知設定済み |
 | Codex VPS移行調査 / 手順書 / 自動セットアップ案 | 完了 |
 | メルカリ割安候補検出MVP | Apple Watch実検索 / CSV保存 / ノイズ除外まで確認済み |
 | GitHub push | 完了 |
@@ -448,7 +448,7 @@ VPSで実行:
 /bin/bash /home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh
 ```
 
-cron例:
+cron:
 
 ```cron
 30 6 * * * /bin/bash /home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh >> /home/ubuntu/f_tools/x_buzz_finder/logs/cron.log 2>&1
@@ -456,7 +456,7 @@ cron例:
 15 18 * * * /bin/bash /home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh >> /home/ubuntu/f_tools/x_buzz_finder/logs/cron.log 2>&1
 ```
 
-cronはまだ本番設定していません。Slack通知が増えるため、運用タイミングを決めてから入れる想定です。
+6:30、11:45、18:15にXで伸びている投稿を検索し、返信数・リポスト・いいね・表示数・スコア・返信の切り口をSlackへ通知します。自動返信は行いません。
 
 ## note補助ツール
 
