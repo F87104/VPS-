@@ -8,6 +8,8 @@ DRAFT_FILLER="$BASE_DIR/socialdog_draft_safe.py"
 NOTIFIER="$BASE_DIR/notify_slack_summary.py"
 PYTHON_BIN="${PYTHON_BIN:-$BASE_DIR/.venv/bin/python}"
 PROFILE_DIR="${SOCIALDOG_PROFILE_DIR:-/home/ubuntu/f_tools/.socialdog_profile}"
+GENERATOR_TIMEOUT_MINUTES="${SOCIALDOG_GENERATOR_TIMEOUT_MINUTES:-5}"
+DRAFT_TIMEOUT_MINUTES="${SOCIALDOG_DRAFT_TIMEOUT_MINUTES:-4}"
 RUN_DATE="$(date '+%Y-%m-%d')"
 OUT_DIR="$LOG_DIR/socialdog_drafts/$RUN_DATE"
 MASTER_LOG="$LOG_DIR/socialdog_daily_drafts.log"
@@ -25,9 +27,17 @@ cd "$BASE_DIR" || exit 1
   echo "host=$(hostname)"
   echo "profile_dir=$PROFILE_DIR"
   echo "out_dir=$OUT_DIR"
+  echo "generator_timeout_minutes=$GENERATOR_TIMEOUT_MINUTES draft_timeout_minutes=$DRAFT_TIMEOUT_MINUTES"
 } > "$LAST_LOG"
 
-"$PYTHON_BIN" "$GENERATOR" \
+GENERATOR_RUNNER=()
+DRAFT_RUNNER=()
+if command -v timeout >/dev/null 2>&1; then
+  GENERATOR_RUNNER=(timeout --kill-after=60s "${GENERATOR_TIMEOUT_MINUTES}m")
+  DRAFT_RUNNER=(timeout --kill-after=60s "${DRAFT_TIMEOUT_MINUTES}m")
+fi
+
+"${GENERATOR_RUNNER[@]}" "$PYTHON_BIN" "$GENERATOR" \
   --out-dir "$OUT_DIR" \
   --update-history \
   >> "$LAST_LOG" 2>&1
@@ -43,7 +53,7 @@ if [ "$status" -eq 0 ]; then
     fi
 
     echo "---- saving draft: $file ----" >> "$LAST_LOG"
-    "$PYTHON_BIN" "$DRAFT_FILLER" \
+    "${DRAFT_RUNNER[@]}" "$PYTHON_BIN" "$DRAFT_FILLER" \
       --text-file "$file" \
       --save-draft \
       --headless \

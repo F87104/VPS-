@@ -23,7 +23,8 @@ from typing import Any
 from urllib.parse import quote_plus
 
 import requests
-from playwright.sync_api import BrowserContext, Page, sync_playwright
+from playwright.sync_api import BrowserContext, Page, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -57,6 +58,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_posts_per_query": 12,
     "max_total_posts": 40,
     "max_scrolls": 3,
+    "article_timeout_ms": 5000,
+    "max_scan_articles_per_scroll": 18,
+    "block_heavy_assets": True,
     "min_likes": 300,
     "min_reposts": 30,
     "min_replies": 20,
@@ -290,7 +294,8 @@ def extract_article(article: Any, label: str, reply_angle: str, config: dict[str
                 postedAt: timeNode ? timeNode.getAttribute("datetime") : "",
                 author: authorNode ? authorNode.innerText : ""
             };
-        }"""
+        }""",
+        timeout=int(config.get("article_timeout_ms", 5000)),
     )
     text = normalize_space(data.get("text", ""))
     links = data.get("links", [])
@@ -330,14 +335,34 @@ def collect_posts_from_search(page: Page, query_conf: dict[str, Any], config: di
     search_url = build_search_url(query, str(query_conf.get("mode", "top")))
 
     logging.info("Fetching X search label=%s url=%s", label, search_url)
-    page.goto(search_url, wait_until="domcontentloaded", timeout=60_000)
+    for attempt in range(1, 3):
+        try:
+            page.goto(search_url, wait_until="commit", timeout=45_000)
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=20_000)
+            except PlaywrightTimeoutError:
+                logging.warning("X search domcontentloaded timeout label=%s attempt=%s", label, attempt)
+            break
+        except PlaywrightTimeoutError as exc:
+            logging.warning("X search navigation timeout label=%s attempt=%s error=%s", label, attempt, exc)
+            if attempt >= 2:
+                logging.error("Skip X search label=%s after repeated navigation timeout", label)
+                return []
+            try:
+                page.goto("about:blank", wait_until="commit", timeout=10_000)
+            except Exception:
+                pass
+            page.wait_for_timeout(5_000)
     page.wait_for_timeout(4_000)
 
     posts: list[BuzzPost] = []
     seen: set[str] = set()
     for scroll_index in range(max_scrolls + 1):
         articles = page.locator('article[data-testid="tweet"]')
-        count = min(articles.count(), 40)
+        count = min(
+            articles.count(),
+            int(config.get("max_scan_articles_per_scroll", max_posts + 8)),
+        )
         logging.info("label=%s scroll=%s visible_articles=%s", label, scroll_index, count)
         for index in range(count):
             try:
@@ -371,6 +396,13 @@ def make_context(config: dict[str, Any]) -> BrowserContext:
     if storage_state and Path(storage_state).exists():
         kwargs["storage_state"] = storage_state
     context = browser.new_context(**kwargs)
+    if bool(config.get("block_heavy_assets", True)):
+        context.route(
+            "**/*",
+            lambda route: route.abort()
+            if route.request.resource_type in {"image", "media", "font"}
+            else route.continue_(),
+        )
     context._x_buzz_playwright = playwright  # type: ignore[attr-defined]
     return context
 
@@ -529,7 +561,15 @@ def collect_live(config: dict[str, Any], only_query: str | None = None) -> list[
     seen: set[str] = set()
     try:
         for query_conf in queries:
-            posts = collect_posts_from_search(page, query_conf, config)
+            try:
+                posts = collect_posts_from_search(page, query_conf, config)
+            except Exception as exc:  # noqa: BLE001
+                logging.exception(
+                    "Failed query label=%s; continuing with next query. error=%s",
+                    query_conf.get("label", ""),
+                    exc,
+                )
+                continue
             for post in posts:
                 if post.url in seen:
                     continue

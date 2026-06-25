@@ -181,6 +181,34 @@ def click_first_visible(page: Page, patterns: list[str]) -> bool:
     return False
 
 
+def dismiss_blocking_dialogs(page: Page) -> None:
+    """Close SocialDog modals that block navigation, such as reconnect notices."""
+    button_patterns = [
+        r"今はしない",
+        r"閉じる",
+        r"キャンセル",
+        r"あとで",
+        r"後で",
+    ]
+    for pattern in button_patterns:
+        locators = [
+            page.get_by_role("button", name=re.compile(pattern)),
+            page.locator(f"text=/{pattern}/"),
+        ]
+        for locator in locators:
+            for index in range(min(locator.count(), 6)):
+                item = locator.nth(index)
+                try:
+                    if not item.is_visible(timeout=500):
+                        continue
+                    item.click(timeout=2500)
+                    logging.info("Dismissed blocking dialog using: %s", pattern)
+                    page.wait_for_timeout(1200)
+                    return
+                except Exception:
+                    continue
+
+
 def find_composer(page: Page) -> Locator | None:
     selectors = [
         ".ProseMirror",
@@ -290,19 +318,37 @@ def save_as_draft(page: Page) -> bool:
 
 
 def try_open_composer(page: Page) -> bool:
-    patterns = [
+    dismiss_blocking_dialogs(page)
+
+    create_patterns = [
         "新しい投稿",
         "新規投稿",
         "投稿作成",
         "投稿を作成",
-        "予約投稿",
         "投稿する",
         "ツイート作成",
         "ツイート",
         "ポスト",
         "作成",
     ]
-    return click_first_visible(page, patterns)
+    if click_first_visible(page, create_patterns):
+        dismiss_blocking_dialogs(page)
+        return True
+
+    navigation_patterns = [
+        "予約投稿",
+        "下書き",
+        "投稿予定",
+        "投稿",
+    ]
+    if click_first_visible(page, navigation_patterns):
+        page.wait_for_timeout(2500)
+        dismiss_blocking_dialogs(page)
+        if click_first_visible(page, create_patterns):
+            dismiss_blocking_dialogs(page)
+            return True
+
+    return False
 
 
 def save_diagnostics(page: Page) -> None:
@@ -356,6 +402,7 @@ def run(args: argparse.Namespace) -> int:
             logging.info("Opened SocialDog: %s", args.url)
 
             wait_for_login(page, args.login_wait_seconds)
+            dismiss_blocking_dialogs(page)
 
             if args.login_only:
                 logging.info("Login-only mode. Keeping browser open for %s seconds.", args.keep_open_seconds)
@@ -379,6 +426,7 @@ def run(args: argparse.Namespace) -> int:
                     logging.info("Done. Draft was saved in SocialDog.")
                 else:
                     logging.warning("Text was filled, but draft save failed.")
+                    return 1
             elif filled:
                 logging.info("Done. Text is in the composer. No submit/save button was clicked.")
             else:
@@ -387,6 +435,8 @@ def run(args: argparse.Namespace) -> int:
                     logging.warning(
                         "Composer was not found. The draft text is copied to clipboard, so paste it manually."
                     )
+                    if args.save_draft:
+                        return 1
 
             logging.info("Keeping browser open for %s seconds.", args.keep_open_seconds)
             if args.keep_open_seconds > 0:

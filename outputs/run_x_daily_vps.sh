@@ -13,6 +13,7 @@ MAX_LIKES="${X_MAX_LIKES:-20}"
 MAX_FOLLOWS="${X_MAX_FOLLOWS:-4}"
 MAX_UNFOLLOWS="${X_MAX_UNFOLLOWS:-0}"
 MAX_RUNTIME_MINUTES="${X_MAX_RUNTIME_MINUTES:-55}"
+WRAPPER_TIMEOUT_MINUTES="${X_WRAPPER_TIMEOUT_MINUTES:-70}"
 MASTER_LOG="$LOG_DIR/x_daily.log"
 LAST_LOG="$LOG_DIR/x_daily_last.log"
 
@@ -31,7 +32,7 @@ cd "$BASE_DIR" || exit 1
 {
   echo "==== $(date '+%Y-%m-%d %H:%M:%S') X daily start ===="
   echo "host=$(hostname)"
-  echo "mode=timeline headless=yes max_actions=$MAX_ACTIONS max_likes=$MAX_LIKES max_follows=$MAX_FOLLOWS max_unfollows=$MAX_UNFOLLOWS max_runtime_minutes=$MAX_RUNTIME_MINUTES"
+  echo "mode=timeline headless=yes max_actions=$MAX_ACTIONS max_likes=$MAX_LIKES max_follows=$MAX_FOLLOWS max_unfollows=$MAX_UNFOLLOWS max_runtime_minutes=$MAX_RUNTIME_MINUTES wrapper_timeout_minutes=$WRAPPER_TIMEOUT_MINUTES"
   echo "config=$CONFIG_PATH"
   if [ -f "$STORAGE_STATE" ]; then
     echo "storage_state=$STORAGE_STATE"
@@ -40,7 +41,12 @@ cd "$BASE_DIR" || exit 1
   fi
 } > "$LAST_LOG"
 
-"$PYTHON_BIN" "$SCRIPT" \
+RUNNER=()
+if command -v timeout >/dev/null 2>&1; then
+  RUNNER=(timeout --kill-after=60s "${WRAPPER_TIMEOUT_MINUTES}m")
+fi
+
+"${RUNNER[@]}" "$PYTHON_BIN" "$SCRIPT" \
   --timeline \
   --headless \
   --config "$CONFIG_PATH" \
