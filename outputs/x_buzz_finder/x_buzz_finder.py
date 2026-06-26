@@ -1050,22 +1050,21 @@ def send_slack(config: dict[str, Any], message: str | dict[str, Any]) -> None:
 
 
 def slack_copy_message(post: BuzzPost, index: int, kind: str, reply_text: str) -> str:
-    label = "通常案" if kind == "normal" else "大喜利案"
-    return "\n".join(
-        [
-            f"コピー用 {index} {label}",
-            post.url,
-            "```",
-            reply_text,
-            "```",
-        ]
-    )
+    return reply_text
 
 
 def send_copy_messages(config: dict[str, Any], posts: list[BuzzPost]) -> None:
     top_count = max(0, int(config.get("slack_copy_message_top_posts", 0)))
     if top_count <= 0:
         return
+    send_slack(
+        config,
+        (
+            "以下は返信文だけのコピー用です。\n"
+            "順番: 1通常 → 1大喜利 → 2通常 → 2大喜利 ..."
+        ),
+    )
+    time.sleep(0.2)
     for index, post in enumerate(posts[:top_count], 1):
         send_slack(config, slack_copy_message(post, index, "normal", post.reply_draft))
         time.sleep(0.2)
