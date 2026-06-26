@@ -470,7 +470,7 @@ cron:
 15 18 * * * /bin/bash /home/ubuntu/f_tools/x_buzz_finder/run_x_buzz_finder_vps.sh >> /home/ubuntu/f_tools/x_buzz_finder/logs/cron.log 2>&1
 ```
 
-6:30、11:45、18:15にXで伸びている投稿を検索し、返信数・リポスト・いいね・表示数・スコア・返信の切り口・コピー用の返信案をSlackへ通知します。SlackのボタンはX返信入力画面を開くだけで、自動返信は行いません。
+6:30、11:45、18:15にXで伸びている投稿を検索し、返信数・リポスト・いいね・表示数・スコア・返信の切り口・コピー用の返信案をSlackへ通知します。Slackのボタンは元ポストを開くだけで、自動返信は行いません。
 
 ## note補助ツール
 

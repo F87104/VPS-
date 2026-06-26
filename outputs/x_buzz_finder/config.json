@@ -13,6 +13,7 @@
   "slack_webhook_url": "",
   "reply_generation": "auto",
   "reply_ai_max_posts": 8,
+  "slack_copy_message_top_posts": 3,
   "openai_api_key": "",
   "openai_model": "",
   "queries": [

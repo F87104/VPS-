@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import quote_plus
 
 import requests
 try:
@@ -76,6 +76,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "slack_webhook_url": "",
     "reply_generation": "auto",
     "reply_ai_max_posts": 8,
+    "slack_copy_message_top_posts": 3,
     "openai_api_key": "",
     "openai_model": "",
     "queries": [],
@@ -926,19 +927,6 @@ def write_markdown(posts: list[BuzzPost]) -> Path:
     return path
 
 
-def tweet_id_from_url(url: str) -> str:
-    match = re.search(r"/status/([0-9]+)", url)
-    return match.group(1) if match else ""
-
-
-def reply_intent_url(post: BuzzPost, reply_text: str) -> str:
-    tweet_id = tweet_id_from_url(post.url)
-    params = {"text": reply_text}
-    if tweet_id:
-        params["in_reply_to"] = tweet_id
-    return f"https://twitter.com/intent/tweet?{urlencode(params)}"
-
-
 def slack_message(posts: list[BuzzPost], markdown_path: Path) -> str:
     top_posts = posts[:8]
     lines = [
@@ -989,13 +977,13 @@ def slack_blocks_payload(posts: list[BuzzPost], markdown_path: Path) -> dict[str
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": (
-                    f"候補数: *{len(posts)}*\n"
-                    f"レポート: `{markdown_path}`\n"
-                    "ボタンは投稿しません。Xの返信入力画面を開くだけです。"
-                ),
+                    "text": (
+                        f"候補数: *{len(posts)}*\n"
+                        f"レポート: `{markdown_path}`\n"
+                        "ボタンは投稿しません。元ポストを開くだけです。"
+                    ),
+                },
             },
-        },
     ]
 
     for index, post in enumerate(top_posts, 1):
@@ -1037,18 +1025,6 @@ def slack_blocks_payload(posts: list[BuzzPost], markdown_path: Path) -> dict[str
                     "elements": [
                         {
                             "type": "button",
-                            "text": {"type": "plain_text", "text": "通常で返信", "emoji": True},
-                            "url": reply_intent_url(post, normal),
-                            "action_id": f"reply_normal_{index}",
-                        },
-                        {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "大喜利で返信", "emoji": True},
-                            "url": reply_intent_url(post, oogiri),
-                            "action_id": f"reply_oogiri_{index}",
-                        },
-                        {
-                            "type": "button",
                             "text": {"type": "plain_text", "text": "元ポスト", "emoji": True},
                             "url": post.url,
                             "action_id": f"open_post_{index}",
@@ -1071,6 +1047,30 @@ def send_slack(config: dict[str, Any], message: str | dict[str, Any]) -> None:
     response.raise_for_status()
     if response.text.strip() != "ok":
         raise RuntimeError(f"Slack response was not ok: {response.text}")
+
+
+def slack_copy_message(post: BuzzPost, index: int, kind: str, reply_text: str) -> str:
+    label = "通常案" if kind == "normal" else "大喜利案"
+    return "\n".join(
+        [
+            f"コピー用 {index} {label}",
+            post.url,
+            "```",
+            reply_text,
+            "```",
+        ]
+    )
+
+
+def send_copy_messages(config: dict[str, Any], posts: list[BuzzPost]) -> None:
+    top_count = max(0, int(config.get("slack_copy_message_top_posts", 0)))
+    if top_count <= 0:
+        return
+    for index, post in enumerate(posts[:top_count], 1):
+        send_slack(config, slack_copy_message(post, index, "normal", post.reply_draft))
+        time.sleep(0.2)
+        send_slack(config, slack_copy_message(post, index, "oogiri", post.oogiri_reply))
+        time.sleep(0.2)
 
 
 def collect_live(config: dict[str, Any], only_query: str | None = None) -> list[BuzzPost]:
@@ -1148,6 +1148,7 @@ def main() -> int:
 
     if not args.dry_run and bool(config.get("slack_notify", True)):
         send_slack(config, slack_blocks_payload(posts, markdown_path))
+        send_copy_messages(config, posts)
         logging.info("Slack notification sent")
     else:
         logging.info("Slack notification skipped")
