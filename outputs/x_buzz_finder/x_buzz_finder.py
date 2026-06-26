@@ -47,7 +47,7 @@ CSV_FIELDS = [
     "URL",
     "スコア",
     "返信の切り口",
-    "返信メモ",
+    "返信案",
     "警告",
 ]
 
@@ -101,7 +101,7 @@ class BuzzPost:
     url: str
     score: int
     reply_angle: str
-    reply_note: str
+    reply_draft: str
     warnings: list[str]
 
     def to_csv_row(self) -> dict[str, str]:
@@ -117,7 +117,7 @@ class BuzzPost:
             "URL": self.url,
             "スコア": str(self.score),
             "返信の切り口": self.reply_angle,
-            "返信メモ": self.reply_note,
+            "返信案": self.reply_draft,
             "警告": ", ".join(self.warnings),
         }
 
@@ -262,13 +262,18 @@ def should_keep(post: BuzzPost, config: dict[str, Any]) -> bool:
     )
 
 
-def make_reply_note(text: str, angle: str, templates: list[str]) -> str:
+def trim_reply(text: str, limit: int = 90) -> str:
+    text = normalize_space(text)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip("、。,. ") + "…"
+
+
+def make_reply_draft(text: str, angle: str, templates: list[str]) -> str:
     template = random.choice(templates) if templates else ""
     if not template:
-        template = "事実を1つ拾って、読者が今日見直せる行動に落とす返信が合いそうです。"
-    if len(text) > 90:
-        text = text[:87].rstrip() + "..."
-    return f"{template} 切り口: {angle}"
+        template = "この話、何に人が反応したのかを見ると学びが残りそうです🌸"
+    return trim_reply(template)
 
 
 def build_search_url(query: str, mode: str = "top") -> str:
@@ -304,7 +309,7 @@ def extract_article(article: Any, label: str, reply_angle: str, config: dict[str
     url = next((link for link in links if "/status/" in link), links[0])
     metrics = parse_metrics(data.get("labels", []), text)
     warnings = warning_words(text, list(config.get("exclude_words", [])))
-    reply_note = make_reply_note(
+    reply_draft = make_reply_draft(
         text,
         reply_angle,
         list(config.get("reply_templates", [])),
@@ -321,7 +326,7 @@ def extract_article(article: Any, label: str, reply_angle: str, config: dict[str
         url=url,
         score=score_post(metrics, data.get("postedAt", "")),
         reply_angle=reply_angle,
-        reply_note=reply_note,
+        reply_draft=reply_draft,
         warnings=warnings,
     )
 
@@ -464,7 +469,7 @@ def sample_posts(config: dict[str, Any]) -> list[BuzzPost]:
                 url=row["url"],
                 score=score_post(metrics, row["posted_at"]),
                 reply_angle=row["reply_angle"],
-                reply_note=make_reply_note(row["text"], row["reply_angle"], list(config.get("reply_templates", []))),
+                reply_draft=make_reply_draft(row["text"], row["reply_angle"], list(config.get("reply_templates", []))),
                 warnings=[],
             )
         )
@@ -503,9 +508,15 @@ def write_markdown(posts: list[BuzzPost]) -> Path:
                 f"- 投稿時刻: {post.posted_at or '未取得'}",
                 f"- URL: [Xで開く]({post.url})",
                 f"- 返信の切り口: {post.reply_angle}",
-                f"- 返信メモ: {post.reply_note}",
+                f"- 返信案: {post.reply_draft}",
                 f"- 警告: {', '.join(post.warnings) if post.warnings else 'なし'}",
                 "",
+                "返信コピー用:",
+                "```text",
+                post.reply_draft,
+                "```",
+                "",
+                "元ポスト:",
                 "```text",
                 post.text[:500],
                 "```",
@@ -534,6 +545,10 @@ def slack_message(posts: list[BuzzPost], markdown_path: Path) -> str:
                 f"返信/リポスト/いいね/表示: {post.replies}/{post.reposts}/{post.likes}/{post.views}",
                 f"{text}",
                 post.url,
+                "返信案:",
+                "```",
+                post.reply_draft,
+                "```",
                 "",
             ]
         )
