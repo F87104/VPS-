@@ -52,10 +52,12 @@ status=$?
 
 cat "$LAST_LOG" >> "$MASTER_LOG"
 
-"$PYTHON_BIN" "$NOTIFIER" \
-  --title "Xバズ返信候補検索" \
-  --status "$status" \
-  --log "$LAST_LOG" \
-  >> "$MASTER_LOG" 2>&1 || true
+if [ "$status" -ne 0 ]; then
+  "$PYTHON_BIN" "$NOTIFIER" \
+    --title "Xバズ返信候補検索" \
+    --status "$status" \
+    --log "$LAST_LOG" \
+    >> "$MASTER_LOG" 2>&1 || true
+fi
 
 exit "$status"
