@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 import requests
 try:
@@ -53,6 +53,7 @@ CSV_FIELDS = [
     "スコア",
     "返信の切り口",
     "返信案",
+    "大喜利返信案",
     "警告",
 ]
 
@@ -110,6 +111,8 @@ KNOWN_TERMS = [
     "エヌビディア",
     "Apple",
     "OpenAI",
+    "予約電話",
+    "店主",
     "アニメ",
     "漫画",
     "集英社",
@@ -183,6 +186,7 @@ class BuzzPost:
     score: int
     reply_angle: str
     reply_draft: str
+    oogiri_reply: str
     warnings: list[str]
 
     def to_csv_row(self) -> dict[str, str]:
@@ -199,6 +203,7 @@ class BuzzPost:
             "スコア": str(self.score),
             "返信の切り口": self.reply_angle,
             "返信案": self.reply_draft,
+            "大喜利返信案": self.oogiri_reply,
             "警告": ", ".join(self.warnings),
         }
 
@@ -470,6 +475,43 @@ def make_reply_draft(text: str, angle: str, templates: list[str], label: str = "
     return make_rule_reply(text, label, angle)
 
 
+def make_oogiri_reply(text: str, label: str, angle: str) -> str:
+    terms = extract_specific_terms(text)
+    term = terms[0] if terms else "この話題"
+    label_text = f"{label} {angle}"
+
+    if "予約電話" in terms or "店主" in terms:
+        candidates = [
+            "AIの予約電話、店主さんの電話だけ先に未来へ強制アップデートされてますね😺",
+            "予約電話が鳴り止まない店、もうAIだけで満席確認の朝礼してそうです🌸",
+        ]
+    elif any(key in label_text for key in ["AI", "ChatGPT", "テック"]):
+        candidates = [
+            f"{term}、便利すぎて人間側のあとでやるが先に絶滅しそうです😺",
+            f"{term}の進化、そろそろ私の後回し癖にもアップデート配布してほしいです🐻",
+            f"{term}、機能追加のたびに人間の言い訳フォルダが圧縮されていきますね🌸",
+        ]
+    elif any(key in label for key in ["ドル円", "相場", "投資", "米国株", "半導体"]):
+        candidates = [
+            f"{term}、名前の圧だけなら市場の朝礼で一番声が大きいタイプですね🐻",
+            f"{term}に反応が集まる時、チャートより先にタイムラインが走り出しますね😺",
+            f"{term}、見出しだけで市場の椅子取りゲームが始まりそうです🌸",
+        ]
+    elif any(key in label for key in ["お金", "働き方", "資産", "副業"]):
+        candidates = [
+            f"{term}、夢は大きいのに最初の一歩だけ毎回靴ひも結び直してますね🥰",
+            f"{term}の話、やる気より先にメモ帳を開いた人から進みそうです🌸",
+        ]
+    else:
+        candidates = [
+            f"{term}、タイムラインの会議室で一番発言権を持ってる感じがしますね😺",
+            f"{term}、伸びる理由がある投稿はコメント欄まで含めて本編ですね🌸",
+        ]
+
+    seed = sum(ord(char) for char in text[-80:]) + len(label) * 3
+    return clean_reply_draft(candidates[seed % len(candidates)])
+
+
 def build_search_url(query: str, mode: str = "top") -> str:
     return f"{X_BASE}/search?q={quote_plus(query)}&src=typed_query&f={mode}"
 
@@ -509,6 +551,7 @@ def extract_article(article: Any, label: str, reply_angle: str, config: dict[str
         list(config.get("reply_templates", [])),
         label,
     )
+    oogiri_reply = make_oogiri_reply(text, label, reply_angle)
     return BuzzPost(
         label=label,
         author=normalize_space(data.get("author", "")).replace("\n", " "),
@@ -522,6 +565,7 @@ def extract_article(article: Any, label: str, reply_angle: str, config: dict[str
         score=score_post(metrics, data.get("postedAt", "")),
         reply_angle=reply_angle,
         reply_draft=reply_draft,
+        oogiri_reply=oogiri_reply,
         warnings=warnings,
     )
 
@@ -670,6 +714,7 @@ def sample_posts(config: dict[str, Any]) -> list[BuzzPost]:
                     list(config.get("reply_templates", [])),
                     row["label"],
                 ),
+                oogiri_reply=make_oogiri_reply(row["text"], row["label"], row["reply_angle"]),
                 warnings=[],
             )
         )
@@ -739,8 +784,8 @@ def apply_ai_reply_drafts(posts: list[BuzzPost], config: dict[str, Any]) -> None
 必ずJSON配列だけを返してください。
 形式:
 [
-  {"index": 1, "reply": "..."},
-  {"index": 2, "reply": "..."}
+  {"index": 1, "reply": "...", "oogiri_reply": "..."},
+  {"index": 2, "reply": "...", "oogiri_reply": "..."}
 ]
 
 返信案のルール:
@@ -757,6 +802,15 @@ def apply_ai_reply_drafts(posts: list[BuzzPost], config: dict[str, Any]) -> None
 - 文末が絵文字の場合、絵文字の直後に句点を置かない。
 - 引用符の片側だけを残さない。迷ったら引用符は使わない。
 - 返信先に失礼な言い方、断定、上から目線は避ける。
+
+大喜利返信案のルール:
+- `oogiri_reply` はクスッと笑える短文にする。
+- 45〜90字。
+- 元ポスト内の固有名詞・数字・テーマ語を必ず1つ入れる。
+- 返信先や当事者を馬鹿にしない。皮肉を強くしない。
+- ただのダジャレだけで終わらせない。ニュースや仕組みへの見方が1つ残る文にする。
+- 投資助言、売買指示、F自身のポジション、注文の話は書かない。
+- 禁止語と絵文字ルールは通常返信案と同じ。
 """.strip()
 
     try:
@@ -773,6 +827,7 @@ def apply_ai_reply_drafts(posts: list[BuzzPost], config: dict[str, Any]) -> None
         return
 
     by_index: dict[int, str] = {}
+    oogiri_by_index: dict[int, str] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -784,18 +839,34 @@ def apply_ai_reply_drafts(posts: list[BuzzPost], config: dict[str, Any]) -> None
         if not reply:
             continue
         by_index[index] = reply
+        oogiri_reply = clean_reply_draft(str(row.get("oogiri_reply", "")))
+        if oogiri_reply:
+            oogiri_by_index[index] = oogiri_reply
 
     updated = 0
+    oogiri_updated = 0
     for index, post in enumerate(target_posts, 1):
         reply = by_index.get(index, "")
-        if not reply:
-            continue
-        if reply_has_forbidden_term(reply) or not reply_uses_post_term(reply, post.text):
-            logging.info("Rejected weak AI reply draft index=%s reply=%s", index, reply)
-            continue
-        post.reply_draft = reply
-        updated += 1
-    logging.info("AI reply drafts applied count=%s target=%s", updated, len(target_posts))
+        if reply:
+            if reply_has_forbidden_term(reply) or not reply_uses_post_term(reply, post.text):
+                logging.info("Rejected weak AI reply draft index=%s reply=%s", index, reply)
+            else:
+                post.reply_draft = reply
+                updated += 1
+
+        oogiri_reply = oogiri_by_index.get(index, "")
+        if oogiri_reply:
+            if reply_has_forbidden_term(oogiri_reply) or not reply_uses_post_term(oogiri_reply, post.text):
+                logging.info("Rejected weak AI oogiri reply index=%s reply=%s", index, oogiri_reply)
+            else:
+                post.oogiri_reply = oogiri_reply
+                oogiri_updated += 1
+    logging.info(
+        "AI reply drafts applied count=%s oogiri_count=%s target=%s",
+        updated,
+        oogiri_updated,
+        len(target_posts),
+    )
 
 
 def write_csv(posts: list[BuzzPost]) -> Path:
@@ -831,11 +902,17 @@ def write_markdown(posts: list[BuzzPost]) -> Path:
                 f"- URL: [Xで開く]({post.url})",
                 f"- 返信の切り口: {post.reply_angle}",
                 f"- 返信案: {post.reply_draft}",
+                f"- 大喜利返信案: {post.oogiri_reply}",
                 f"- 警告: {', '.join(post.warnings) if post.warnings else 'なし'}",
                 "",
-                "返信コピー用:",
+                "通常返信コピー用:",
                 "```text",
                 post.reply_draft,
+                "```",
+                "",
+                "大喜利返信コピー用:",
+                "```text",
+                post.oogiri_reply,
                 "```",
                 "",
                 "元ポスト:",
@@ -847,6 +924,19 @@ def write_markdown(posts: list[BuzzPost]) -> Path:
         )
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
+
+
+def tweet_id_from_url(url: str) -> str:
+    match = re.search(r"/status/([0-9]+)", url)
+    return match.group(1) if match else ""
+
+
+def reply_intent_url(post: BuzzPost, reply_text: str) -> str:
+    tweet_id = tweet_id_from_url(post.url)
+    params = {"text": reply_text}
+    if tweet_id:
+        params["in_reply_to"] = tweet_id
+    return f"https://twitter.com/intent/tweet?{urlencode(params)}"
 
 
 def slack_message(posts: list[BuzzPost], markdown_path: Path) -> str:
@@ -867,9 +957,13 @@ def slack_message(posts: list[BuzzPost], markdown_path: Path) -> str:
                 f"返信/リポスト/いいね/表示: {post.replies}/{post.reposts}/{post.likes}/{post.views}",
                 f"{text}",
                 post.url,
-                "返信案:",
+                "通常案:",
                 "```",
                 post.reply_draft,
+                "```",
+                "大喜利案:",
+                "```",
+                post.oogiri_reply,
                 "```",
                 "",
             ]
@@ -877,12 +971,103 @@ def slack_message(posts: list[BuzzPost], markdown_path: Path) -> str:
     return "\n".join(lines)
 
 
-def send_slack(config: dict[str, Any], message: str) -> None:
+def truncate_slack_text(text: str, limit: int = 260) -> str:
+    text = normalize_space(text)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def slack_blocks_payload(posts: list[BuzzPost], markdown_path: Path) -> dict[str, Any]:
+    top_posts = posts[:6]
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Xバズ返信候補", "emoji": True},
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"候補数: *{len(posts)}*\n"
+                    f"レポート: `{markdown_path}`\n"
+                    "ボタンは投稿しません。Xの返信入力画面を開くだけです。"
+                ),
+            },
+        },
+    ]
+
+    for index, post in enumerate(top_posts, 1):
+        snippet = truncate_slack_text(post.text, 180)
+        normal = truncate_slack_text(post.reply_draft, 220)
+        oogiri = truncate_slack_text(post.oogiri_reply, 220)
+        blocks.extend(
+            [
+                {"type": "divider"},
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            f"*{index}. [{post.label}] score={post.score}*\n"
+                            f"返信/リポスト/いいね/表示: "
+                            f"{post.replies}/{post.reposts}/{post.likes}/{post.views}\n"
+                            f"<{post.url}|元ポストを開く>\n"
+                            f"{snippet}"
+                        ),
+                    },
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*通常案 コピー用*\n```{normal}```",
+                    },
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*大喜利案 コピー用*\n```{oogiri}```",
+                    },
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "通常で返信", "emoji": True},
+                            "url": reply_intent_url(post, normal),
+                            "action_id": f"reply_normal_{index}",
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "大喜利で返信", "emoji": True},
+                            "url": reply_intent_url(post, oogiri),
+                            "action_id": f"reply_oogiri_{index}",
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "元ポスト", "emoji": True},
+                            "url": post.url,
+                            "action_id": f"open_post_{index}",
+                        },
+                    ],
+                },
+            ]
+        )
+
+    return {"text": slack_message(posts, markdown_path), "blocks": blocks[:50]}
+
+
+def send_slack(config: dict[str, Any], message: str | dict[str, Any]) -> None:
     webhook_url = str(config.get("slack_webhook_url", "")).strip()
     if not webhook_url:
         logging.info("Slack webhook missing; skip notification")
         return
-    response = requests.post(webhook_url, json={"text": message}, timeout=20)
+    payload = message if isinstance(message, dict) else {"text": message}
+    response = requests.post(webhook_url, json=payload, timeout=20)
     response.raise_for_status()
     if response.text.strip() != "ok":
         raise RuntimeError(f"Slack response was not ok: {response.text}")
@@ -962,7 +1147,7 @@ def main() -> int:
     logging.info("Run finished posts=%s csv=%s md=%s", len(posts), csv_path, markdown_path)
 
     if not args.dry_run and bool(config.get("slack_notify", True)):
-        send_slack(config, slack_message(posts, markdown_path))
+        send_slack(config, slack_blocks_payload(posts, markdown_path))
         logging.info("Slack notification sent")
     else:
         logging.info("Slack notification skipped")
