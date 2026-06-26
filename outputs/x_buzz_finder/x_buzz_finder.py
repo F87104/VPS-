@@ -16,6 +16,7 @@ import os
 import random
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,6 +84,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 
 KNOWN_TERMS = [
+    "投資枠",
     "ドル円",
     "米金利",
     "日経平均",
@@ -108,12 +110,28 @@ KNOWN_TERMS = [
     "エヌビディア",
     "Apple",
     "OpenAI",
+    "アニメ",
+    "漫画",
+    "集英社",
+    "翻訳",
     "イラン",
     "中東",
     "物価",
     "副業",
     "資産形成",
 ]
+
+GENERIC_TERMS = {
+    "news",
+    "online",
+    "https",
+    "http",
+    "www",
+    "com",
+    "jp",
+    "official",
+    "gyt",
+}
 
 FORBIDDEN_REPLY_TERMS = [
     "買い",
@@ -346,19 +364,32 @@ def trim_reply(text: str, limit: int = 90) -> str:
 
 
 def extract_specific_terms(text: str, limit: int = 4) -> list[str]:
+    text = unicodedata.normalize("NFKC", text)
     seen: set[str] = set()
     terms: list[str] = []
 
     def add(term: str) -> None:
-        term = normalize_space(term).strip("、。,.!！?？:：()（）[]【】「」")
+        term = normalize_space(unicodedata.normalize("NFKC", term)).strip("、。,.!！?？:：()（）[]【】「」#")
         if len(term) < 2 or term.lower() in seen:
+            return
+        if term.lower() in GENERIC_TERMS:
+            return
+        if re.fullmatch(r"[A-Za-z]{2,}", term) and term.lower() in GENERIC_TERMS:
             return
         seen.add(term.lower())
         terms.append(term)
 
+    for quoted in re.findall(r"「([^」]{2,32})」|『([^』]{2,32})』", text):
+        add(next((item for item in quoted if item), ""))
+
+    lower_text = text.lower()
+    known_matches: list[tuple[int, str]] = []
     for term in KNOWN_TERMS:
-        if term.lower() in text.lower():
-            add(term)
+        start = lower_text.find(term.lower())
+        if start >= 0:
+            known_matches.append((start, term))
+    for _, term in sorted(known_matches, key=lambda item: item[0]):
+        add(term)
 
     for match in re.findall(r"#[0-9A-Za-zぁ-んァ-ヶ一-龥ー_]+", text):
         add(match)
@@ -379,6 +410,7 @@ def extract_specific_terms(text: str, limit: int = 4) -> list[str]:
 def clean_reply_draft(text: str) -> str:
     text = normalize_space(text.replace("\n", " "))
     text = re.sub(r"^[-・\d.）) ]+", "", text)
+    text = text.translate(str.maketrans("", "", "「」『』"))
     return trim_reply(text, 96)
 
 
@@ -397,26 +429,27 @@ def make_rule_reply(text: str, label: str, angle: str) -> str:
     terms = extract_specific_terms(text)
     term = terms[0] if terms else "この投稿"
     label_text = f"{label} {angle}"
+    label_only = label
 
-    if any(key in label_text for key in ["ドル円", "相場", "投資", "米国株", "半導体"]):
-        candidates = [
-            f"{term}に反応が集まる時は、見出しより先に動いた資金の向きを見たくなります🐻",
-            f"{term}の話は、数字だけでなく反応が速かった場所まで拾いたいですね🌸",
-            f"{term}で人が動く時って、値動きの前にどの材料が刺さったかが出やすいですね😺",
-        ]
-    elif any(key in label_text for key in ["AI", "ChatGPT", "テック"]):
+    if any(key in label_text for key in ["AI", "ChatGPT", "テック"]):
         candidates = [
             f"{term}は機能名だけで終わらせず、何の手間が減るのかまで見たいです😺",
             f"{term}の話、すごいで止めずに毎日の作業のどこが短くなるかまで見たいですね🌸",
             f"{term}に人が集まる時は、派手さより使う人の時間がどう浮くかを見たいです🐻",
         ]
-    elif any(key in label_text for key in ["お金", "働き方", "資産", "副業"]):
+    elif any(key in label_only for key in ["ドル円", "相場", "投資", "米国株", "半導体"]):
+        candidates = [
+            f"{term}に反応が集まる時は、見出しより先に動いた資金の向きを見たくなります🐻",
+            f"{term}の話は、数字だけでなく反応が速かった場所まで拾いたいですね🌸",
+            f"{term}で人が動く時って、値動きの前にどの材料が刺さったかが出やすいですね😺",
+        ]
+    elif any(key in label_only for key in ["お金", "働き方", "資産", "副業"]):
         candidates = [
             f"{term}の話、読むだけで終わらせず今日の手元で1つ変えるなら何かを考えたいです🥰",
             f"{term}は大きく見えるけど、家計や時間の置き方に落とすと急に現実味が出ますね🌸",
             f"{term}で人が集まる時は、誰がどんな行動を増やしたかまで見たいです🐻",
         ]
-    elif any(key in label_text for key in ["暮らし", "物価"]):
+    elif any(key in label_only for key in ["暮らし", "物価"]):
         candidates = [
             f"{term}の話は、家計のどこにしわ寄せが出るかまで見ると残るものがあります🌸",
             f"{term}に反応が集まる時は、手に取る物より減らした物に本音が出そうですね😺",
@@ -722,6 +755,7 @@ def apply_ai_reply_drafts(posts: list[BuzzPost], config: dict[str, Any]) -> None
 - 口調は自然な日本語。少し親しみやすく、でも意味のある一言にする。
 - 絵文字は0〜1個。使うなら 😺 🐻 🐻‍❄️ 🥰 🌈 🌸 から1つだけ。
 - 文末が絵文字の場合、絵文字の直後に句点を置かない。
+- 引用符の片側だけを残さない。迷ったら引用符は使わない。
 - 返信先に失礼な言い方、断定、上から目線は避ける。
 """.strip()
 
