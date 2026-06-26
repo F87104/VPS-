@@ -20,6 +20,8 @@ outputs/x_buzz_finder/data/*.md
 outputs/x_buzz_finder/logs/*.log
 outputs/x_buzz_finder/logs/*.html
 outputs/x_buzz_finder/logs/*.png
+outputs/x_buzz_finder/public/*.html
+outputs/x_buzz_finder/public/*.pid
 
 # Python cache
 __pycache__/

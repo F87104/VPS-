@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import html
 import json
 import logging
 import os
@@ -35,6 +36,7 @@ from playwright.sync_api import sync_playwright
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 LOG_DIR = BASE_DIR / "logs"
+PUBLIC_DIR = BASE_DIR / "public"
 LOG_FILE = LOG_DIR / "x_buzz_finder.log"
 JST = timezone.utc
 X_BASE = "https://x.com"
@@ -77,6 +79,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "reply_generation": "auto",
     "reply_ai_max_posts": 8,
     "slack_copy_message_top_posts": 3,
+    "dashboard_enabled": False,
+    "dashboard_top_posts": 10,
+    "dashboard_base_url": "",
     "openai_api_key": "",
     "openai_model": "",
     "queries": [],
@@ -927,8 +932,240 @@ def write_markdown(posts: list[BuzzPost]) -> Path:
     return path
 
 
-def slack_message(posts: list[BuzzPost], markdown_path: Path) -> str:
-    top_posts = posts[:8]
+def dashboard_public_url(config: dict[str, Any], path: Path) -> str:
+    base_url = str(config.get("dashboard_base_url", "")).strip().rstrip("/")
+    if not base_url:
+        return ""
+    return f"{base_url}/{path.name}"
+
+
+def write_dashboard(posts: list[BuzzPost], config: dict[str, Any]) -> tuple[Path | None, str]:
+    if not bool(config.get("dashboard_enabled", True)):
+        return None, ""
+
+    PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
+    top_count = max(1, int(config.get("dashboard_top_posts", 10)))
+    top_posts = posts[:top_count]
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    cards: list[str] = []
+    for index, post in enumerate(top_posts, 1):
+        snippet = html.escape(truncate_slack_text(post.text, 240))
+        normal = html.escape(post.reply_draft)
+        oogiri = html.escape(post.oogiri_reply)
+        author = html.escape(post.author or "未取得")
+        label = html.escape(post.label)
+        url = html.escape(post.url, quote=True)
+        metrics = html.escape(
+            f"返信 {post.replies} / RP {post.reposts} / いいね {post.likes} / 表示 {post.views}"
+        )
+        cards.append(
+            f"""
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="rank">#{index} {label}</div>
+          <div class="author">{author}</div>
+        </div>
+        <div class="score">score {post.score}</div>
+      </div>
+      <div class="metrics">{metrics}</div>
+      <p class="snippet">{snippet}</p>
+
+      <section class="reply-box">
+        <div class="reply-label">通常案</div>
+        <p id="normal-{index}" class="reply-text">{normal}</p>
+        <button type="button" onclick="copyText('normal-{index}', this)">通常コピー</button>
+      </section>
+
+      <section class="reply-box alt">
+        <div class="reply-label">大喜利案</div>
+        <p id="oogiri-{index}" class="reply-text">{oogiri}</p>
+        <button type="button" onclick="copyText('oogiri-{index}', this)">大喜利コピー</button>
+      </section>
+
+      <a class="open-link" href="{url}" target="_blank" rel="noopener noreferrer">元ポストを開く</a>
+    </article>
+"""
+        )
+
+    page = f"""<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Xバズ返信ダッシュボード</title>
+  <style>
+    :root {{
+      color-scheme: dark;
+      --bg: #111418;
+      --panel: #1b2028;
+      --panel-2: #222936;
+      --text: #f2f5f8;
+      --muted: #9aa8b8;
+      --line: #303846;
+      --accent: #5bc0ff;
+      --accent-2: #ffcf70;
+      --ok: #54d18a;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }}
+    header {{
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding: 14px 16px;
+      background: rgba(17, 20, 24, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+    }}
+    h1 {{
+      margin: 0;
+      font-size: 19px;
+      letter-spacing: 0;
+    }}
+    .sub {{
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 2px;
+    }}
+    main {{
+      width: min(860px, 100%);
+      margin: 0 auto;
+      padding: 14px 12px 32px;
+    }}
+    .card {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      margin: 0 0 12px;
+    }}
+    .card-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }}
+    .rank {{
+      font-weight: 700;
+      font-size: 16px;
+    }}
+    .author, .metrics, .sub {{
+      color: var(--muted);
+    }}
+    .author, .metrics {{
+      font-size: 13px;
+    }}
+    .score {{
+      color: var(--accent-2);
+      font-size: 12px;
+      white-space: nowrap;
+    }}
+    .snippet {{
+      margin: 10px 0 12px;
+      color: #dce5ee;
+      font-size: 14px;
+    }}
+    .reply-box {{
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 10px;
+    }}
+    .reply-box.alt {{
+      border-color: #4b405f;
+    }}
+    .reply-label {{
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }}
+    .reply-text {{
+      margin: 0 0 10px;
+      white-space: pre-wrap;
+      font-size: 15px;
+    }}
+    button, .open-link {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      border-radius: 8px;
+      border: 0;
+      padding: 0 14px;
+      font-weight: 700;
+      font-size: 15px;
+      text-decoration: none;
+    }}
+    button {{
+      background: var(--accent);
+      color: #071019;
+      min-width: 132px;
+    }}
+    button.done {{
+      background: var(--ok);
+    }}
+    .open-link {{
+      width: 100%;
+      margin-top: 12px;
+      background: #2e3746;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Xバズ返信ダッシュボード</h1>
+    <div class="sub">{html.escape(created_at)} 作成 / 上位{len(top_posts)}件</div>
+  </header>
+  <main>
+    {''.join(cards)}
+  </main>
+  <script>
+    async function copyText(id, button) {{
+      const text = document.getElementById(id).innerText;
+      try {{
+        await navigator.clipboard.writeText(text);
+        button.textContent = 'コピー済み';
+        button.classList.add('done');
+        setTimeout(() => {{
+          button.textContent = id.startsWith('normal') ? '通常コピー' : '大喜利コピー';
+          button.classList.remove('done');
+        }}, 1200);
+      }} catch (err) {{
+        const range = document.createRange();
+        const node = document.getElementById(id);
+        range.selectNodeContents(node);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = '選択しました';
+      }}
+    }}
+  </script>
+</body>
+</html>
+"""
+
+    latest_path = PUBLIC_DIR / "latest.html"
+    timestamp_path = PUBLIC_DIR / f"x_buzz_dashboard_{datetime.now().strftime('%Y%m%d_%H%M')}.html"
+    latest_path.write_text(page, encoding="utf-8")
+    timestamp_path.write_text(page, encoding="utf-8")
+    return latest_path, dashboard_public_url(config, latest_path)
+
+
+def slack_message(posts: list[BuzzPost], markdown_path: Path, dashboard_url: str = "") -> str:
+    top_posts = posts[:10]
     lines = [
         "📣 Xバズ返信候補",
         f"候補数: {len(posts)}",
@@ -956,6 +1193,8 @@ def slack_message(posts: list[BuzzPost], markdown_path: Path) -> str:
                 "",
             ]
         )
+    if dashboard_url:
+        lines.extend(["返信ダッシュボード:", dashboard_url])
     return "\n".join(lines)
 
 
@@ -966,8 +1205,8 @@ def truncate_slack_text(text: str, limit: int = 260) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
-def slack_blocks_payload(posts: list[BuzzPost], markdown_path: Path) -> dict[str, Any]:
-    top_posts = posts[:6]
+def slack_blocks_payload(posts: list[BuzzPost], markdown_path: Path, dashboard_url: str = "") -> dict[str, Any]:
+    top_posts = posts[:10]
     blocks: list[dict[str, Any]] = [
         {
             "type": "header",
@@ -980,16 +1219,51 @@ def slack_blocks_payload(posts: list[BuzzPost], markdown_path: Path) -> dict[str
                     "text": (
                         f"候補数: *{len(posts)}*\n"
                         f"レポート: `{markdown_path}`\n"
-                        "ボタンは投稿しません。元ポストを開くだけです。"
+                        "ダッシュボードでコピーして、元ポストへ手動返信します。"
                     ),
                 },
             },
     ]
+    if dashboard_url:
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "返信ダッシュボード", "emoji": True},
+                        "url": dashboard_url,
+                        "action_id": "open_dashboard",
+                        "style": "primary",
+                    }
+                ],
+            }
+        )
 
     for index, post in enumerate(top_posts, 1):
         snippet = truncate_slack_text(post.text, 180)
         normal = truncate_slack_text(post.reply_draft, 220)
         oogiri = truncate_slack_text(post.oogiri_reply, 220)
+        if dashboard_url:
+            blocks.extend(
+                [
+                    {"type": "divider"},
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                f"*{index}. [{post.label}] score={post.score}*\n"
+                                f"返信/リポスト/いいね/表示: "
+                                f"{post.replies}/{post.reposts}/{post.likes}/{post.views}\n"
+                                f"<{post.url}|元ポストを開く>\n"
+                                f"{snippet}"
+                            ),
+                        },
+                    },
+                ]
+            )
+            continue
         blocks.extend(
             [
                 {"type": "divider"},
@@ -1034,7 +1308,7 @@ def slack_blocks_payload(posts: list[BuzzPost], markdown_path: Path) -> dict[str
             ]
         )
 
-    return {"text": slack_message(posts, markdown_path), "blocks": blocks[:50]}
+    return {"text": slack_message(posts, markdown_path, dashboard_url), "blocks": blocks[:50]}
 
 
 def send_slack(config: dict[str, Any], message: str | dict[str, Any]) -> None:
@@ -1143,11 +1417,20 @@ def main() -> int:
     apply_ai_reply_drafts(posts, config)
     csv_path = write_csv(posts)
     markdown_path = write_markdown(posts)
-    logging.info("Run finished posts=%s csv=%s md=%s", len(posts), csv_path, markdown_path)
+    dashboard_path, dashboard_url = write_dashboard(posts, config)
+    logging.info(
+        "Run finished posts=%s csv=%s md=%s dashboard=%s dashboard_url=%s",
+        len(posts),
+        csv_path,
+        markdown_path,
+        dashboard_path,
+        dashboard_url,
+    )
 
     if not args.dry_run and bool(config.get("slack_notify", True)):
-        send_slack(config, slack_blocks_payload(posts, markdown_path))
-        send_copy_messages(config, posts)
+        send_slack(config, slack_blocks_payload(posts, markdown_path, dashboard_url))
+        if not dashboard_url:
+            send_copy_messages(config, posts)
         logging.info("Slack notification sent")
     else:
         logging.info("Slack notification skipped")
