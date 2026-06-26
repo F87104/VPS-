@@ -8,7 +8,7 @@ Xで伸びている投稿を探し、返信候補としてCSV・Markdown・Slack
 
 - 伸びている投稿を早めに見つける
 - 返信しやすい投稿をカテゴリ別に並べる
-- 短い返信案をコピー用コードブロックで出す
+- 元ポストの数字・固有名詞を拾った短い返信案をコピー用コードブロックで出す
 - Slackへ候補リンクを送る
 
 ## ファイル
@@ -34,6 +34,12 @@ python3 outputs/x_buzz_finder/x_buzz_finder.py --sample --dry-run
 CSV saved: ...
 Markdown saved: ...
 Candidates: 2
+```
+
+OpenAIを使わず、ルール版だけで確認したい場合:
+
+```bash
+python3 outputs/x_buzz_finder/x_buzz_finder.py --sample --dry-run --rule-replies
 ```
 
 ## VPSで実行
@@ -65,7 +71,9 @@ VPSでは既存のXログイン状態を使います。
 - `min_views`: 最低表示数
 - `max_age_hours`: 古すぎる投稿を除外する時間
 - `exclude_words`: 触らない方がいい投稿の除外語
-- `reply_templates`: SlackとMarkdownに出す短い返信案
+- `reply_generation`: `auto`ならOpenAI APIキーがある時だけ返信案を磨く
+- `reply_ai_max_posts`: OpenAIで返信案を作る上位候補数
+- `openai_model`: 空欄なら `.env` の `OPENAI_MODEL` を使う
 
 ## 見方
 
@@ -79,3 +87,8 @@ Markdownの上から順に見るのがおすすめです。
 返信は自動化せず、本文を読んでから手動で行います。
 
 Slackには上位候補のURLと短い返信案が出ます。返信案はコピーしやすいようにコードブロックで表示します。
+
+返信案は2段構えです。
+
+1. まず元ポスト内の数字・固有名詞・テーマ語を拾ったルール版を作る
+2. `OPENAI_API_KEY` がある場合だけ、上位候補をOpenAIで自然なF文体へ磨く

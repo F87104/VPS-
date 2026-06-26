@@ -23,6 +23,10 @@ from typing import Any
 from urllib.parse import quote_plus
 
 import requests
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - VPS has openai, fallback keeps the tool usable.
+    OpenAI = None  # type: ignore[assignment]
 from playwright.sync_api import BrowserContext, Page, TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
@@ -68,10 +72,69 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_age_hours": 48,
     "slack_notify": True,
     "slack_webhook_url": "",
+    "reply_generation": "auto",
+    "reply_ai_max_posts": 8,
+    "openai_api_key": "",
+    "openai_model": "",
     "queries": [],
     "exclude_words": [],
     "reply_templates": [],
 }
+
+
+KNOWN_TERMS = [
+    "ドル円",
+    "米金利",
+    "日経平均",
+    "NASDAQ",
+    "ナスダック",
+    "S&P500",
+    "NYダウ",
+    "GOLD",
+    "ゴールド",
+    "原油",
+    "CPI",
+    "PPI",
+    "FOMC",
+    "FRB",
+    "ECB",
+    "ISM",
+    "雇用統計",
+    "半導体",
+    "AI",
+    "生成AI",
+    "ChatGPT",
+    "NVIDIA",
+    "エヌビディア",
+    "Apple",
+    "OpenAI",
+    "イラン",
+    "中東",
+    "物価",
+    "副業",
+    "資産形成",
+]
+
+FORBIDDEN_REPLY_TERMS = [
+    "買い",
+    "売り",
+    "買う",
+    "売る",
+    "買います",
+    "売ります",
+    "利確",
+    "損切り",
+    "エントリー",
+    "ポジション",
+    "ロット",
+    "指値",
+    "投資助言",
+    "重要です",
+    "示唆",
+    "考えられます",
+    "と言えるでしょう",
+    "注目ですね",
+]
 
 
 def load_env_files(paths: list[Path]) -> dict[str, str]:
@@ -139,6 +202,17 @@ def load_config(path: Path) -> dict[str, Any]:
         os.getenv("SLACK_WEBHOOK_URL")
         or env.get("SLACK_WEBHOOK_URL", "")
         or config.get("slack_webhook_url", "")
+    ).strip()
+    config["openai_api_key"] = (
+        os.getenv("OPENAI_API_KEY")
+        or env.get("OPENAI_API_KEY", "")
+        or config.get("openai_api_key", "")
+    ).strip()
+    config["openai_model"] = (
+        os.getenv("OPENAI_MODEL")
+        or env.get("OPENAI_MODEL", "")
+        or config.get("openai_model", "")
+        or "gpt-5.5"
     ).strip()
     return config
 
@@ -264,16 +338,103 @@ def should_keep(post: BuzzPost, config: dict[str, Any]) -> bool:
 
 def trim_reply(text: str, limit: int = 90) -> str:
     text = normalize_space(text)
+    text = re.sub(r"^(返信案|案)\s*[:：]\s*", "", text)
+    text = text.strip("「」『』\"'` ")
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip("、。,. ") + "…"
 
 
-def make_reply_draft(text: str, angle: str, templates: list[str]) -> str:
-    template = random.choice(templates) if templates else ""
-    if not template:
-        template = "この話、何に人が反応したのかを見ると学びが残りそうです🌸"
-    return trim_reply(template)
+def extract_specific_terms(text: str, limit: int = 4) -> list[str]:
+    seen: set[str] = set()
+    terms: list[str] = []
+
+    def add(term: str) -> None:
+        term = normalize_space(term).strip("、。,.!！?？:：()（）[]【】「」")
+        if len(term) < 2 or term.lower() in seen:
+            return
+        seen.add(term.lower())
+        terms.append(term)
+
+    for term in KNOWN_TERMS:
+        if term.lower() in text.lower():
+            add(term)
+
+    for match in re.findall(r"#[0-9A-Za-zぁ-んァ-ヶ一-龥ー_]+", text):
+        add(match)
+
+    for match in re.findall(r"\$[A-Za-z]{1,8}|[A-Z][A-Z0-9&.]{1,10}", text):
+        add(match)
+
+    number_pattern = (
+        r"[0-9][0-9,.]*"
+        r"(?:円|ドル|%|％|万人|万|億|兆|件|年|月|日|時|分|bp|bps|ポイント|pt)?"
+    )
+    for match in re.findall(number_pattern, text):
+        add(match)
+
+    return terms[:limit]
+
+
+def clean_reply_draft(text: str) -> str:
+    text = normalize_space(text.replace("\n", " "))
+    text = re.sub(r"^[-・\d.）) ]+", "", text)
+    return trim_reply(text, 96)
+
+
+def reply_has_forbidden_term(reply: str) -> bool:
+    return any(term in reply for term in FORBIDDEN_REPLY_TERMS)
+
+
+def reply_uses_post_term(reply: str, post_text: str) -> bool:
+    terms = extract_specific_terms(post_text, limit=6)
+    if not terms:
+        return True
+    return any(term in reply for term in terms)
+
+
+def make_rule_reply(text: str, label: str, angle: str) -> str:
+    terms = extract_specific_terms(text)
+    term = terms[0] if terms else "この投稿"
+    label_text = f"{label} {angle}"
+
+    if any(key in label_text for key in ["ドル円", "相場", "投資", "米国株", "半導体"]):
+        candidates = [
+            f"{term}に反応が集まる時は、見出しより先に動いた資金の向きを見たくなります🐻",
+            f"{term}の話は、数字だけでなく反応が速かった場所まで拾いたいですね🌸",
+            f"{term}で人が動く時って、値動きの前にどの材料が刺さったかが出やすいですね😺",
+        ]
+    elif any(key in label_text for key in ["AI", "ChatGPT", "テック"]):
+        candidates = [
+            f"{term}は機能名だけで終わらせず、何の手間が減るのかまで見たいです😺",
+            f"{term}の話、すごいで止めずに毎日の作業のどこが短くなるかまで見たいですね🌸",
+            f"{term}に人が集まる時は、派手さより使う人の時間がどう浮くかを見たいです🐻",
+        ]
+    elif any(key in label_text for key in ["お金", "働き方", "資産", "副業"]):
+        candidates = [
+            f"{term}の話、読むだけで終わらせず今日の手元で1つ変えるなら何かを考えたいです🥰",
+            f"{term}は大きく見えるけど、家計や時間の置き方に落とすと急に現実味が出ますね🌸",
+            f"{term}で人が集まる時は、誰がどんな行動を増やしたかまで見たいです🐻",
+        ]
+    elif any(key in label_text for key in ["暮らし", "物価"]):
+        candidates = [
+            f"{term}の話は、家計のどこにしわ寄せが出るかまで見ると残るものがあります🌸",
+            f"{term}に反応が集まる時は、手に取る物より減らした物に本音が出そうですね😺",
+            f"{term}はニュースより、生活の中で先に削られる場所まで見たいです🐻",
+        ]
+    else:
+        candidates = [
+            f"{term}に人が集まった理由を、見出しより反応の順番で見たいです🐻",
+            f"{term}の話、何が人の行動を動かしたのかまで拾うと残りそうです🌸",
+            f"{term}で伸びる投稿は、言葉よりその後に増えた行動を見たいですね😺",
+        ]
+
+    seed = sum(ord(char) for char in text[:80]) + len(label)
+    return clean_reply_draft(candidates[seed % len(candidates)])
+
+
+def make_reply_draft(text: str, angle: str, templates: list[str], label: str = "") -> str:
+    return make_rule_reply(text, label, angle)
 
 
 def build_search_url(query: str, mode: str = "top") -> str:
@@ -313,6 +474,7 @@ def extract_article(article: Any, label: str, reply_angle: str, config: dict[str
         text,
         reply_angle,
         list(config.get("reply_templates", [])),
+        label,
     )
     return BuzzPost(
         label=label,
@@ -469,11 +631,137 @@ def sample_posts(config: dict[str, Any]) -> list[BuzzPost]:
                 url=row["url"],
                 score=score_post(metrics, row["posted_at"]),
                 reply_angle=row["reply_angle"],
-                reply_draft=make_reply_draft(row["text"], row["reply_angle"], list(config.get("reply_templates", []))),
+                reply_draft=make_reply_draft(
+                    row["text"],
+                    row["reply_angle"],
+                    list(config.get("reply_templates", [])),
+                    row["label"],
+                ),
                 warnings=[],
             )
         )
     return posts
+
+
+def parse_json_array(text: str) -> list[Any]:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\[[\s\S]*\]", text)
+        if not match:
+            raise
+        parsed = json.loads(match.group(0))
+    if not isinstance(parsed, list):
+        raise ValueError("OpenAI reply draft response was not a JSON array")
+    return parsed
+
+
+def build_reply_prompt_payload(posts: list[BuzzPost]) -> str:
+    rows = []
+    for index, post in enumerate(posts, 1):
+        rows.append(
+            {
+                "index": index,
+                "category": post.label,
+                "author": post.author[:80],
+                "text": post.text[:420],
+                "reply_angle": post.reply_angle,
+                "metrics": {
+                    "replies": post.replies,
+                    "reposts": post.reposts,
+                    "likes": post.likes,
+                    "views": post.views,
+                },
+            }
+        )
+    return json.dumps(rows, ensure_ascii=False)
+
+
+def apply_ai_reply_drafts(posts: list[BuzzPost], config: dict[str, Any]) -> None:
+    mode = str(config.get("reply_generation", "auto")).lower()
+    if mode in {"off", "false", "rule", "rules"}:
+        logging.info("AI reply draft generation disabled mode=%s", mode)
+        return
+    api_key = str(config.get("openai_api_key", "")).strip()
+    if not api_key:
+        logging.info("OpenAI API key missing; keep rule-based reply drafts")
+        return
+    if OpenAI is None:
+        logging.info("openai package missing; keep rule-based reply drafts")
+        return
+
+    max_posts = max(0, int(config.get("reply_ai_max_posts", 8)))
+    target_posts = posts[:max_posts]
+    if not target_posts:
+        return
+
+    instructions = """
+あなたは投資家FのX返信案を作る編集者です。
+目的は「バズっている投稿に手動で返信するための下書き」です。自動返信はしません。
+
+必ずJSON配列だけを返してください。
+形式:
+[
+  {"index": 1, "reply": "..."},
+  {"index": 2, "reply": "..."}
+]
+
+返信案のルール:
+- 1投稿につき返信案は1つ。
+- 45〜95字。
+- 元ポスト内の固有名詞・数字・テーマ語を必ず1つ入れる。
+- ただの共感、きれいごと、汎用コメントにしない。
+- 読んだ人の見方が1つ増える言葉にする。
+- 投資助言、売買指示、F自身のポジション、注文の話は書かない。
+- `買い` `売り` `利確` `損切り` `エントリー` `ポジション` `ロット` `指値` は使わない。
+- `重要です` `示唆します` `考えられます` `と言えるでしょう` のAI文体は禁止。
+- 口調は自然な日本語。少し親しみやすく、でも意味のある一言にする。
+- 絵文字は0〜1個。使うなら 😺 🐻 🐻‍❄️ 🥰 🌈 🌸 から1つだけ。
+- 文末が絵文字の場合、絵文字の直後に句点を置かない。
+- 返信先に失礼な言い方、断定、上から目線は避ける。
+""".strip()
+
+    try:
+        client = OpenAI(api_key=api_key)  # type: ignore[operator]
+        response = client.responses.create(
+            model=str(config.get("openai_model", "gpt-5.5")),
+            instructions=instructions,
+            input=build_reply_prompt_payload(target_posts),
+            store=False,
+        )
+        rows = parse_json_array(response.output_text)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("OpenAI reply draft generation failed; keep rule-based drafts. error=%s", exc)
+        return
+
+    by_index: dict[int, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            index = int(row.get("index", 0))
+        except (TypeError, ValueError):
+            continue
+        reply = clean_reply_draft(str(row.get("reply", "")))
+        if not reply:
+            continue
+        by_index[index] = reply
+
+    updated = 0
+    for index, post in enumerate(target_posts, 1):
+        reply = by_index.get(index, "")
+        if not reply:
+            continue
+        if reply_has_forbidden_term(reply) or not reply_uses_post_term(reply, post.text):
+            logging.info("Rejected weak AI reply draft index=%s reply=%s", index, reply)
+            continue
+        post.reply_draft = reply
+        updated += 1
+    logging.info("AI reply drafts applied count=%s target=%s", updated, len(target_posts))
 
 
 def write_csv(posts: list[BuzzPost]) -> Path:
@@ -609,6 +897,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--query-label", default=None, help="Run only one query label from config")
     parser.add_argument("--storage-state", default=None, help="Override Playwright storage_state path")
     parser.add_argument("--test-slack", action="store_true", help="Send a Slack test message")
+    parser.add_argument("--rule-replies", action="store_true", help="Use rule-based reply drafts without OpenAI")
     return parser.parse_args()
 
 
@@ -622,6 +911,8 @@ def main() -> int:
         config["headless"] = False
     if args.storage_state:
         config["storage_state"] = args.storage_state
+    if args.rule_replies:
+        config["reply_generation"] = "rule"
 
     if args.test_slack:
         send_slack(config, "Xバズ返信候補テスト: Slack通知OK")
@@ -631,6 +922,7 @@ def main() -> int:
     logging.info("Run started sample=%s dry_run=%s", args.sample, args.dry_run)
     posts = sample_posts(config) if args.sample else collect_live(config, args.query_label)
     posts.sort(key=lambda post: post.score, reverse=True)
+    apply_ai_reply_drafts(posts, config)
     csv_path = write_csv(posts)
     markdown_path = write_markdown(posts)
     logging.info("Run finished posts=%s csv=%s md=%s", len(posts), csv_path, markdown_path)
